@@ -1,0 +1,140 @@
+---
+name: mis-port-op-implement-change
+description: >-
+  Implement one bounded accepted change or repair concrete review findings in
+  current code, with meaningful tests, affected checks and optional required TDD.
+  Use for portable implementation or test-first work; not requirement approval,
+  feature redesign, independent review, tracker/worktree management or publication.
+---
+
+# Implement a bounded change
+
+Own code/test changes and their checked handoff. Work outside RIS with supplied
+requirements, current code, accepted technical constraints/design,
+project rules and explicit file/command permissions. Do not require
+RIS skills, configuration, directories or a tracker. The caller owns project
+identity, claim, documentation integration, independent approval and publication.
+
+Use the supplied actual authorized targets: versioned Git files in the caller's
+checked copy; ignored/external files at their effective destination, not an inert
+replica. Git base/tree fields below apply to the versioned subject only. Local-only
+work binds before/after actual-target state and useful-effect checks instead of
+inventing a Git base, branch or SHA; mixed work identifies and checks both parts.
+Inspect relevant target-specific rules, permissions, concurrent writers and side
+effects; a Git copy does not isolate external/shared resources. Preserve foreign
+tracked/untracked/ignored data. Unclear material effects block dependent mutation;
+never infer setup, dependency-installation or access-expansion rights from tools.
+
+Establish `implementation_mode: standard|tdd` from the caller, request and project
+rules; default to `standard` only when none requires TDD. This is a semantic input,
+not a host-loader argument or RIS config field. Conflicting requirements block the
+affected work. Both modes require meaningful tests for changed executable behavior
+and actual applicable checks. Ordinary instruction edits use substantive reading,
+static checks and independent review as required by the target project; they need
+no new live-agent run or repeated question about one for source readiness.
+
+## Conditional resources
+
+Read from **this installed folder**, only on the stated condition:
+
+- `references/tdd.md` in `tdd` mode before changing behavior. Observe expected
+  RED before implementation and GREEN after; never silently fall back to test-last.
+- `references/publication-snapshot.md` before checks/handoff when unrelated dirty
+  files, context exclusions or ambiguity complicate the publication snapshot.
+
+Unavailable required resources block dependent work, not independent inspection.
+
+## Implement and check
+
+1. Establish outcome, exclusions and criteria; inspect the actual implementation,
+   conventions, current working tree and relevant tests. Record base revision,
+   existing user changes and the exact permitted scope. Compare the task's code
+   assumptions and accepted contract versions to current facts. Old plans may be
+   optional context, never a prerequisite or approval stage. Before dependent edits,
+   confirm sufficient accepted inputs and choose a viable approach in the actual
+   code within accepted architecture. Missing essential inputs block only
+   dependent changes. A feature implementation needs independent acceptance of
+   the applicable requirements and design; a standalone change uses its accepted
+   technical constraints without invented feature metadata.
+   If feasibility rests on an uncertain platform behavior or external boundary,
+   use current evidence or the smallest permitted decisive probe before dependent
+   changes. Return a confirmed contract conflict promptly to the caller/user;
+   do not prolong attempts to satisfy incompatible obligations. Independent
+   authorized work may continue, but cannot resolve or conceal that decision.
+2. Map criteria to observable behavior and stable test boundaries from accepted
+   inputs and existing conventions; ask only for missing material decisions.
+   Implement small increments using existing interfaces, state owners and allowed
+   dependency directions; in `tdd` apply the owned loop. Add/update tests for
+   changed executable behavior, including applicable failures, boundaries and quantitative
+   requirements. Derive expectations independently from requirements or worked
+   examples, not by repeating the implementation. Prefer real internal components;
+   isolate external boundaries or nondeterminism where needed, and justify any
+   implementation-coupled substitute. Do not add ceremonial tests for text-only
+   or reversible low-impact changes; behavior-preserving refactors keep tests green.
+3. Decide local reversible details within accepted design. A change beyond or
+   contrary to accepted requirements/design/contracts in public contract,
+   responsibility, state owner, invariant or desired behavior is a revision
+   proposal, not an implementation choice. Report affected criteria,
+   contracts, adjacent work/tests and required decision owner. Stop that dependent
+   change while completing authorized independent work; do not rewrite product
+   sources or global architecture to legitimize the departure.
+4. Select and **run** the smallest sufficient affected check set: new/changed tests,
+   existing regression tests and consumers of changed contracts, plus applicable
+   static/contract/integration checks. Use project commands and inspect actual
+    exits/results. Distinguish the project's mandatory fast gate, affected checks
+    and full candidate/build acceptance; do not infer full regression on every
+    commit/build/push. Missing or ambiguous policy never authorizes shrinking an
+    existing gate: obtain an agreed policy first, preserving current obligations.
+    Briefly explain change, consumers, protected risks, checks/results and gaps in
+    the existing handoff, not a new per-edit report or mandatory affected-test tool.
+    Run a full suite only when project rules require it or impact
+   cannot be covered reliably by a narrower set; state the reason. After edits
+    rerun invalidated checks, retaining suitable current evidence for other parts.
+    Do not remove assertions, scenarios or browsers, disable tests or alter product
+    behavior to get green. Explain preserved risk coverage for any authorized move
+    between test levels. A smaller gate is not a faster full regression. Gate pass
+    is not full acceptance/release readiness; unrun, failed or incomplete full suites
+    remain so, and one pass does not establish that flakiness is fixed. Do not bypass
+    hooks/gates; local and CI runs may protect different conditions. Reuse evidence
+    only for the same snapshot/conditions or with explicit applicability grounds.
+   Prefer deterministic tests for parsing, arithmetic and error handling. For
+   instruction edits check prescriptions, names, resources, links, dependencies
+   and parity where relevant; do not infer observed agent behavior from review.
+   Apply the actual target project's rules and any prohibition of agent tests.
+   Reliability, cost and repeatability claims need applicable existing observations
+   with their original versions/limits. Historical unmet behavioral obligations
+   remain unverified, not automatic gates for an ordinary text amendment. Work
+   with an explicitly accepted behavioral objective needs separately agreed scope
+   under project rules. Before new verification setup, name the remaining evidence
+   gap, why cheaper/current evidence is insufficient and the decision it informs.
+   If effort materially grows beyond the
+   planned check, return the limitation and options to the caller/user before
+   expanding dependent verification. Do not silently waive a mandatory check;
+   any accepted reduction retains explicit unverified claims and limits.
+   Failed/unavailable mandatory checks remain failed/unverified, not inapplicable.
+   Identify current checks, outcomes and limits against
+   the exact final snapshot: base revision plus authorized additions/changes/
+   deletions bound to content and modes, retaining unchanged base files. Include
+   new files; identify the snapshot reproducibly by commit or content fingerprint.
+   Local reports/tracker/tooling are context, not automatically publication payload.
+   Checks must exercise that snapshot; runtime-affecting contextual differences
+   require reassessment. Inspect the final diff for unintended changes.
+5. For repair input, confirm findings apply to the current tree. Required repair
+   covers high/medium: retain IDs and link them to fixes or reasoned disputes,
+   preserving requirements and reporting unresolved blockers. Low recommendations
+   are optional; do not repair them automatically or create tasks/another round
+   for them alone. A collective disposition suffices. Recheck fixes and related
+   regressions; changed inputs may expose new concrete blockers, not justify a
+   fresh style audit. Repair is not approval: reassess affected bytes, independently
+   when project/caller rules require it. No round limit approves unresolved blockers.
+
+Return `ok|blocked|conflict|error` for the bounded operation, with checked evidence
+as a separate fact, preserved effects, stopping cause and exact remainder; include
+mode, scope, input/design/contract versions,
+files and final snapshot identity, criterion-to-check results,
+repair mapping, unrun checks and revision needs. No plan or implementation-report
+persistence, substitute log or distribution of its fields is required. TDD remains
+the executor's obligation; do not claim unknown history or conceal a known violation.
+Do not call the change
+independently approved.
+Do not commit/push, manage tracker/worktrees, close work, or start another skill.

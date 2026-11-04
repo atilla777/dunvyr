@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/glm-5.3",
+  "agents": {
+    "advanced": {
+      "description": "Complex requirements, architecture, diagnostics, and independent review for MIS",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3"
+    },
+    "standard": {
+      "description": "Implementation, tests, and focused fixes for MIS",
+      "mode": "subagent",
+      "model": "opencode-go/deepseek-v4.1-flash"
+    }
+  },
+  "worktree": {
+    "directory": ".sdlc/worktrees"
+  }
+}

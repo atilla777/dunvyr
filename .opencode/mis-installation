@@ -1,0 +1,6 @@
+format=1
+source=https://github.com/atilla777/mis
+revision=e70a2423ceb18bf5e9db2964edae89af923570fd
+harness=opencode
+
+Managed MIS package; verified against exact upstream Git objects.

@@ -15,14 +15,14 @@
 
 ## App-factory и health-эндпоинт
 
-- Точка сборки — `dunvyr.main.create_app(*, engine=None, database_url=None)`: composition root, регистрирует роутеры, кладёт engine/session factory в `app.state`. Модульного экземпляра приложения нет; ASGI-запуск: `uvicorn --factory dunvyr.main:create_app`.
+- Точка сборки — `dunvyr.main.create_app(*, engine=None, database_url=None)`: composition root, регистрирует роутеры (health + identity), кладёт engine/session factory и настройки identity (allowed origins, cookie Secure, rate limiter, фабрика сервиса) в `app.state`, подключает CORS-middleware. При `DUNVYR_AUTO_MIGRATE=1` применяет Alembic-миграции к движку до старта — контракт identity и переменные окружения: [identity](identity.md). Модульного экземпляра приложения нет; ASGI-запуск: `uvicorn --factory dunvyr.main:create_app`.
 - Контракт `GET /health` → `200` с телом `{"status": "ok", "database": "ok"}`; `database` проверяется реальным `SELECT 1` через сессию приложения, а не константой.
 - Разрешение URL БД (в порядке приоритета): явный аргумент → `database_url` → переменная окружения `DUNVYR_DATABASE_URL` → default `sqlite:///./dunvyr.db` (файл рабочей БД и его WAL/SHM-sidecar-файлы игнорируются Git).
 
 ## База данных и миграции
 
 - SQLAlchemy 2.x. На каждом SQLite-соединении включается `PRAGMA foreign_keys=ON`; для файловых БД включается WAL journaling (для `:memory:` — no-op).
-- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL) — бизнес-таблиц нет.
+- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL); первая бизнес-миграция `0002` (identity) — [identity](identity.md). Авто-миграция при старте — opt-in `DUNVYR_AUTO_MIGRATE=1` (движок приложения, `DUNVYR_MIGRATIONS_DIR`, default `migrations` от cwd=backend).
 - Alembic-окружение берёт URL из `sqlalchemy.url` ini-опции → `DUNVYR_DATABASE_URL` → default; поддерживает движок, инжектированный через `config.attributes["engine"]` (используется тестами).
 
 ## Тестовая архитектура и изоляция
@@ -32,13 +32,15 @@
 
 ## Архитектурные контракты (Import Linter)
 
-Четыре контракта, все зелёные; нарушение ловится проверкой (продемонстрировано red/green в задаче: временный межконтекстный импорт и обратный слоевой импорт давали red, после удаления — green):
+Скелетные контракты (введены задачей dunvyr-68c.1; нарушение ловится проверкой — продемонстрировано red/green: временный межконтекстный импорт и обратный слоевой импорт давали red, после удаления — green):
 
 1. независимость семи доменных контекстов (`identity`, `campaigns`, `characters`, `adventures`, `gameplay`, `communication`, `narration`); `shared` вне набора — контексты могут импортировать `shared`;
 2. `shared` не импортирует доменные контексты;
 3. запрет импорта чужих `domain`/`application`/`infrastructure`-слоёв (wildcard-контракт; сегодня строже — межконтекстных импортов нет вовсе, пока не появятся `public/`-контракты);
 4. слоёвость app-level: `dunvyr.main` (composition root) > `dunvyr.presentation` > `dunvyr.infrastructure`.
 
+Плюс 4 контракта identity (слои `presentation > application > domain` и `infrastructure > application > domain`, запреты для `public`/`domain`) — см. [identity](identity.md). Итого 8 контрактов, все зелёные.
+
 ## Ограничения (ещё не существует)
 
-Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). Гостевая идентичность — [identity](identity.md). WebSocket, кампании/чат и остальная игровая доменная логика — будущие вехи; контексты кроме identity пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

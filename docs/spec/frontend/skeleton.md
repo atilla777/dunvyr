@@ -18,17 +18,18 @@
 ## Минимальная страница
 
 - Точка входа: `frontend/index.html` — `<div id="root">` + module-скрипт `/src/main.tsx`; `main.tsx` монтирует `App` в `StrictMode`, отсутствие `#root` — явная ошибка времени выполнения.
-- `App` — заголовок `<h1>Dunvyr</h1>` и строка статуса скелета; роутинга, игровых компонентов и продуктовой стилевой темы нет. Стили — минимальный `index.css` (центрирование, типографика, светлая/тёмная схема через `prefers-color-scheme`).
+- `App` — тонкий срез гостевого входа (введён задачей dunvyr-u4k.1, контракт API — [backend/identity](../backend/identity.md)): при загрузке `GET /api/identity/me` → состояния `loading` («Проверяем сессию…») / `anonymous` (форма входа: label «Псевдоним», input, кнопка «Войти», ошибка с `role="alert"`) / `authenticated` («Вы вошли как …»). Заголовок `<h1>Dunvyr</h1>` присутствует во всех состояниях (контракт E2E smoke). API-клиент — `src/api.ts` (относительный `/api`), форма — `src/LoginForm.tsx`; роутинга, игровых компонентов и продуктовой стилевой темы нет. Стили — минимальный `index.css` (центрирование, типографика, светлая/тёмная схема через `prefers-color-scheme`, адаптив формы входа).
 
 ## Dev-сервер и LAN
 
 - `npm run dev` поднимает Vite dev-сервер на `localhost` по умолчанию.
 - LAN-биндинг — явный opt-in: переменная окружения `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) в `vite.config.ts` задаёт `server.host`; по умолчанию не `0.0.0.0` (правило LAN: открытие listener — только после осознанной настройки firewall и allowed origins). LAN-запуск обоих серверов одной командой — `make dev` (слушает `0.0.0.0` по умолчанию) — см. [tooling/commands](../tooling/commands.md).
+- Прокси API (введён задачей dunvyr-u4k.1): `vite.config.ts` проксирует `/api` → `DUNVYR_BACKEND_ORIGIN` (default `http://127.0.0.1:8000`). Браузер всегда работает с API same-origin на адрес Vite-сервера — cookie сессии и Origin-проверки остаются корректными с любого LAN-хоста без перечисления origin'ов на frontend.
 - Проверено на снимке задачи: dev-сервер отдаёт `GET /` → 200 (HTML с root-контейнером и module-скриптом) и `GET /src/main.tsx` → 200 (Vite-трансформированный модуль с React-mount).
 
 ## Тестовая архитектура
 
-- Component-тест `src/App.test.tsx` реально рендерит `App` через `@testing-library/react` в jsdom и проверяет заголовок уровня 1 «Dunvyr» и строку статуса; матчеры — `@testing-library/jest-dom/vitest` (setup `src/test/setup.ts`).
+- Component-тесты через `@testing-library/react` в jsdom (матчеры — `@testing-library/jest-dom/vitest`, setup `src/test/setup.ts`): `src/App.test.tsx` (заголовок уровня 1 «Dunvyr», состояния экрана входа — форма при 401, «Вы вошли как …» после входа, отсутствие токена в `localStorage`/`document.cookie`) и `src/LoginForm.test.tsx` (отправка псевдонима, отображение ошибки, блокировка кнопки при отправке; `fetch` замокан). Итого 2 файла / 6 тестов на снимке dunvyr-u4k.1.
 - Конфигурация Vitest — в `vite.config.ts` (`environment: 'jsdom'`, `css: false` — стили в тестах не импортируются; `include: ['src/**/*.test.{ts,tsx}']`). Unit-тесты живут только в `src/`; Playwright-спеки живут в `e2e/` и в Vitest-прогон не попадают (введено задачей dunvyr-68c.4, подтверждено: `make test-unit` собирает 1 файл / 1 тест).
 - Браузерные E2E — `@playwright/test`: конфиг `playwright.config.ts` и спеки `e2e/` покрываются `tsc --noEmit` (`tsconfig.json` include) и ESLint/Prettier; запуск — `make test-e2e-smoke` — см. [tooling/commands](../tooling/commands.md).
 

@@ -22,7 +22,7 @@
 ## База данных и миграции
 
 - SQLAlchemy 2.x. На каждом SQLite-соединении включается `PRAGMA foreign_keys=ON`; для файловых БД включается WAL journaling (для `:memory:` — no-op).
-- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL); бизнес-миграции: `0002` (identity) — [identity](identity.md), `0003` (campaigns) — [campaigns](campaigns.md). Авто-миграция при старте — opt-in `DUNVYR_AUTO_MIGRATE=1` (движок приложения, `DUNVYR_MIGRATIONS_DIR`, default `migrations` от cwd=backend).
+- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL); бизнес-миграции: `0002` (identity) — [identity](identity.md), `0003`–`0004` (campaigns: схема + уникальность псевдонима члена) — [campaigns](campaigns.md). Авто-миграция при старте — opt-in `DUNVYR_AUTO_MIGRATE=1` (движок приложения, `DUNVYR_MIGRATIONS_DIR`, default `migrations` от cwd=backend).
 - Alembic-окружение берёт URL из `sqlalchemy.url` ini-опции → `DUNVYR_DATABASE_URL` → default; поддерживает движок, инжектированный через `config.attributes["engine"]` (используется тестами).
 
 ## Тестовая архитектура и изоляция
@@ -43,4 +43,4 @@
 
 ## Ограничения (ещё не существует)
 
-Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). Гостевая идентичность — [identity](identity.md); кампании (срез организатора) — [campaigns](campaigns.md). WebSocket, присоединение/чат и остальная игровая доменная логика — будущие вехи; контексты кроме identity/campaigns пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). Гостевая идентичность — [identity](identity.md); кампании (срез организатора + гостевой срез join/отзыв) — [campaigns](campaigns.md). WebSocket/чат и остальная игровая доменная логика — будущие вехи; контексты кроме identity/campaigns пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

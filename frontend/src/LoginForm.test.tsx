@@ -64,4 +64,23 @@ describe('LoginForm', () => {
       'Не удалось связаться с сервером. Попробуйте ещё раз.',
     );
   });
+
+  it('disables the submit button while the request is pending', async () => {
+    const onAuthenticated = vi.fn();
+    let resolveFetch: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(pending));
+    render(<LoginForm onAuthenticated={onAuthenticated} />);
+
+    fireEvent.change(screen.getByLabelText('Псевдоним'), { target: { value: 'Алиса' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
+
+    expect(screen.getByRole('button', { name: 'Входим…' })).toBeDisabled();
+
+    resolveFetch(jsonResponse(guest, 201));
+    await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith(guest));
+    expect(screen.getByRole('button', { name: 'Войти' })).toBeEnabled();
+  });
 });

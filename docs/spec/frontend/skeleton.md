@@ -29,7 +29,7 @@
 
 ## Тестовая архитектура
 
-- Component-тесты через `@testing-library/react` в jsdom (матчеры — `@testing-library/jest-dom/vitest`, setup `src/test/setup.ts`): `src/App.test.tsx` (заголовок уровня 1 «Dunvyr», состояния экрана входа — форма при 401, «Вы вошли как …» после входа, отсутствие токена в `localStorage`/`document.cookie`) и `src/LoginForm.test.tsx` (отправка псевдонима, отображение ошибки, блокировка кнопки при отправке; `fetch` замокан). Итого 2 файла / 6 тестов на снимке dunvyr-u4k.1.
+- Component-тесты через `@testing-library/react` в jsdom (матчеры — `@testing-library/jest-dom/vitest`, setup `src/test/setup.ts`): `src/App.test.tsx` (заголовок уровня 1 «Dunvyr», состояния экрана входа — форма при 401, «Вы вошли как …» после входа, отсутствие токена в `localStorage`/`document.cookie`) и `src/LoginForm.test.tsx` (отправка псевдонима, отображение ошибки, блокировка кнопки при отправке; `fetch` замокан). Итого 2 файла / 7 тестов на снимке dunvyr-u4k.1.
 - Конфигурация Vitest — в `vite.config.ts` (`environment: 'jsdom'`, `css: false` — стили в тестах не импортируются; `include: ['src/**/*.test.{ts,tsx}']`). Unit-тесты живут только в `src/`; Playwright-спеки живут в `e2e/` и в Vitest-прогон не попадают (введено задачей dunvyr-68c.4, подтверждено: `make test-unit` собирает 1 файл / 1 тест).
 - Браузерные E2E — `@playwright/test`: конфиг `playwright.config.ts` и спеки `e2e/` покрываются `tsc --noEmit` (`tsconfig.json` include) и ESLint/Prettier; запуск — `make test-e2e-smoke` — см. [tooling/commands](../tooling/commands.md).
 

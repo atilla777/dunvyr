@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -11,11 +12,16 @@ from dunvyr.campaigns.application.errors import (
     CampaignAccessDenied,
     CampaignNotFound,
     DuplicateIdempotencyKey,
+    InvitationUnavailable,
+    MembershipInsertConflict,
+    NicknameTaken,
+    NoFreeSeats,
 )
-from dunvyr.campaigns.application.service import CampaignService, CreateCampaign
+from dunvyr.campaigns.application.service import CampaignService, CreateCampaign, JoinCampaign
 from dunvyr.campaigns.domain.campaign import Campaign
 from dunvyr.campaigns.domain.invitation import Invitation, hash_invitation_secret
 from dunvyr.campaigns.domain.max_seats import InvalidMaxSeats, MaxSeats
+from dunvyr.campaigns.domain.membership import MemberRole, Membership
 from dunvyr.campaigns.domain.name import CampaignName, InvalidCampaignName
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -31,6 +37,11 @@ class FakeCampaignRepository:
         self.rows: dict[UUID, Campaign] = {}
         self.added: list[Campaign] = []
         self.conflict: Campaign | None = None
+        self.member_inserts: list[Membership] = []
+        self.member_insert_result = True
+        self.failed_insert_campaign: Campaign | None = None
+        self.member_conflict: Campaign | None = None
+        self.invitation_updates: list[Invitation] = []
 
     def add(self, campaign: Campaign) -> None:
         if self.conflict is not None:
@@ -57,6 +68,40 @@ class FakeCampaignRepository:
             ),
             None,
         )
+
+    def find_by_invitation_token_hash(self, token_hash: str) -> Campaign | None:
+        return next(
+            (
+                campaign
+                for campaign in self.rows.values()
+                if campaign.invitation.token_hash == token_hash
+            ),
+            None,
+        )
+
+    def add_member_if_seats_available(
+        self,
+        campaign_id: UUID,
+        membership: Membership,
+    ) -> bool:
+        if self.member_conflict is not None:
+            self.rows[self.member_conflict.id] = self.member_conflict
+            self.member_conflict = None
+            raise MembershipInsertConflict
+        if not self.member_insert_result:
+            if self.failed_insert_campaign is not None:
+                self.rows[campaign_id] = self.failed_insert_campaign
+                self.failed_insert_campaign = None
+            return False
+        campaign = self.rows[campaign_id]
+        self.rows[campaign_id] = replace(campaign, members=(*campaign.members, membership))
+        self.member_inserts.append(membership)
+        return True
+
+    def update_invitation(self, campaign_id: UUID, invitation: Invitation) -> None:
+        campaign = self.rows[campaign_id]
+        self.rows[campaign_id] = replace(campaign, invitation=invitation)
+        self.invitation_updates.append(invitation)
 
 
 class FakeUnitOfWork:
@@ -241,3 +286,222 @@ def test_get_campaign_denies_a_guest_who_is_not_a_member() -> None:
 
     with pytest.raises(CampaignAccessDenied):
         service.get_campaign(CAMPAIGN_ID, OTHER_GUEST_ID)
+
+
+def join_command(**overrides: object) -> JoinCampaign:
+    values: dict[str, object] = {
+        "secret": RAW_SECRET,
+        "guest_id": OTHER_GUEST_ID,
+        "guest_nickname": "Боб",
+    }
+    values.update(overrides)
+    return JoinCampaign(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_join_campaign_adds_a_player_and_returns_its_membership() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=4))
+
+    joined = service.join_campaign(join_command())
+
+    assert joined.joined
+    assert joined.campaign.id == CAMPAIGN_ID
+    assert [member.nickname for member in joined.campaign.members] == ["Алиса", "Боб"]
+    assert joined.campaign.members[-1].role is MemberRole.PLAYER
+    assert joined.campaign.members[-1].joined_at == NOW
+    assert [
+        (member.guest_id, member.nickname, member.role) for member in uow.campaigns.member_inserts
+    ] == [(OTHER_GUEST_ID, "Боб", MemberRole.PLAYER)]
+    assert uow.commits == 2
+
+
+@pytest.mark.unit
+def test_join_campaign_replays_the_same_guest_without_a_new_seat_or_commit() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=4))
+    first = service.join_campaign(join_command())
+
+    replay = service.join_campaign(join_command())
+
+    assert first.joined
+    assert not replay.joined
+    assert replay.campaign.id == first.campaign.id
+    assert [member.nickname for member in replay.campaign.members] == ["Алиса", "Боб"]
+    assert len(uow.campaigns.member_inserts) == 1
+    assert uow.commits == 2
+
+
+@pytest.mark.unit
+def test_join_campaign_rejects_an_unknown_secret() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+
+    with pytest.raises(InvitationUnavailable):
+        service.join_campaign(join_command(secret="unknown-secret"))
+
+    assert uow.campaigns.member_inserts == []
+    assert uow.commits == 1
+
+
+@pytest.mark.unit
+def test_join_campaign_rejects_a_revoked_invitation() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+    service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)
+
+    with pytest.raises(InvitationUnavailable):
+        service.join_campaign(join_command())
+
+    assert uow.campaigns.member_inserts == []
+
+
+@pytest.mark.unit
+def test_join_campaign_rejects_a_campaign_without_free_seats() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=2))
+    service.join_campaign(join_command())
+    third_guest_id = UUID("55555555-5555-4555-8555-555555555555")
+
+    with pytest.raises(NoFreeSeats):
+        service.join_campaign(join_command(guest_id=third_guest_id, guest_nickname="Кэрол"))
+
+    assert len(uow.campaigns.member_inserts) == 1
+
+
+@pytest.mark.unit
+def test_join_campaign_rejects_a_taken_nickname() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+
+    with pytest.raises(NicknameTaken):
+        service.join_campaign(join_command(guest_nickname="Алиса"))
+
+    assert uow.campaigns.member_inserts == []
+
+
+@pytest.mark.unit
+def test_join_campaign_reports_a_seat_race_lost_at_the_database() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+    uow.campaigns.member_insert_result = False
+
+    with pytest.raises(NoFreeSeats):
+        service.join_campaign(join_command())
+
+    assert uow.campaigns.member_inserts == []
+    assert uow.commits == 1
+
+
+@pytest.mark.unit
+def test_join_campaign_reports_a_revoke_race_lost_at_the_database() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+    stale = uow.campaigns.rows[CAMPAIGN_ID]
+    uow.campaigns.member_insert_result = False
+    uow.campaigns.failed_insert_campaign = stale.revoke_invitation()
+
+    with pytest.raises(InvitationUnavailable):
+        service.join_campaign(join_command())
+
+    assert uow.campaigns.member_inserts == []
+    assert uow.commits == 1
+
+
+@pytest.mark.unit
+def test_join_campaign_replays_when_the_insert_races_with_the_same_guest() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=4))
+    stale = uow.campaigns.rows[CAMPAIGN_ID]
+    winner = replace(
+        stale,
+        members=(
+            *stale.members,
+            Membership(
+                guest_id=OTHER_GUEST_ID,
+                nickname="Боб",
+                role=MemberRole.PLAYER,
+                joined_at=NOW,
+            ),
+        ),
+    )
+    uow.campaigns.member_conflict = winner
+
+    joined = service.join_campaign(join_command())
+
+    assert not joined.joined
+    assert [member.nickname for member in joined.campaign.members] == ["Алиса", "Боб"]
+    assert uow.campaigns.member_inserts == []
+    assert uow.commits == 1
+
+
+@pytest.mark.unit
+def test_join_campaign_reports_a_nickname_race_lost_at_the_database() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=4))
+    stale = uow.campaigns.rows[CAMPAIGN_ID]
+    winner = replace(
+        stale,
+        members=(
+            *stale.members,
+            Membership(
+                guest_id=UUID("55555555-5555-4555-8555-555555555555"),
+                nickname="Боб",
+                role=MemberRole.PLAYER,
+                joined_at=NOW,
+            ),
+        ),
+    )
+    uow.campaigns.member_conflict = winner
+
+    with pytest.raises(NicknameTaken):
+        service.join_campaign(join_command())
+
+    assert uow.campaigns.member_inserts == []
+
+
+@pytest.mark.unit
+def test_revoke_invitation_deactivates_it_for_the_organizer() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+
+    view = service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)
+
+    assert not view.invitation_active
+    assert not uow.campaigns.invitation_updates[0].is_active
+    assert uow.commits == 2
+
+
+@pytest.mark.unit
+def test_revoke_invitation_is_idempotent_after_the_first_success() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command())
+    first = service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)
+
+    replay = service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)
+
+    assert not first.invitation_active
+    assert not replay.invitation_active
+    assert len(uow.campaigns.invitation_updates) == 1
+    assert uow.commits == 2
+
+
+@pytest.mark.unit
+def test_revoke_invitation_is_forbidden_for_non_organizers() -> None:
+    service, uow, _generator = build_service()
+    service.create_campaign(command(max_seats=4))
+    service.join_campaign(join_command())
+
+    with pytest.raises(CampaignAccessDenied):
+        service.revoke_invitation(CAMPAIGN_ID, OTHER_GUEST_ID)
+
+    assert uow.campaigns.invitation_updates == []
+    assert uow.commits == 2
+
+
+@pytest.mark.unit
+def test_revoke_invitation_is_not_found_for_a_missing_campaign() -> None:
+    service, _uow, _generator = build_service()
+
+    with pytest.raises(CampaignNotFound):
+        service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)

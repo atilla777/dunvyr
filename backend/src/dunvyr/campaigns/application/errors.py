@@ -13,3 +13,19 @@ class CampaignAccessDenied(Exception):
 
 class DuplicateIdempotencyKey(Exception):
     """The database rejected a second campaign for the same organizer and key."""
+
+
+class InvitationUnavailable(Exception):
+    """The invitation secret is unknown or its invitation was revoked."""
+
+
+class NoFreeSeats(Exception):
+    """The campaign cannot accept another member."""
+
+
+class NicknameTaken(Exception):
+    """Another member of the campaign already uses the guest nickname."""
+
+
+class MembershipInsertConflict(Exception):
+    """The database rejected a member insert that raced with another join."""

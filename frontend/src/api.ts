@@ -42,11 +42,20 @@ const CAMPAIGN_NAME_ERROR =
 const SEATS_ERROR = 'Число мест должно быть от 2 до 20.';
 const CAMPAIGN_FORBIDDEN = 'Нет доступа к этой кампании.';
 const CAMPAIGN_NOT_FOUND = 'Кампания не найдена.';
+const INVITATION_NOT_FOUND = 'Ссылка-приглашение не найдена или отозвана.';
+const CAMPAIGN_FULL = 'В кампании нет свободных мест.';
+const NICKNAME_TAKEN = 'Этот псевдоним уже занят в кампании.';
+const JOIN_INVALID = 'Не удалось присоединиться к кампании. Проверьте ссылку.';
+const JOIN_RATE_LIMIT = 'Слишком много попыток присоединиться. Попробуйте позже.';
+const REVOKE_RATE_LIMIT = 'Слишком много попыток. Попробуйте позже.';
 
 export class ApiError extends Error {
-  constructor(message: string) {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
     super(message);
     this.name = 'ApiError';
+    this.status = status;
   }
 }
 
@@ -183,12 +192,79 @@ export async function fetchCampaign(campaignId: string): Promise<Campaign> {
   }
 
   if (response.status === 403) {
-    throw new ApiError(CAMPAIGN_FORBIDDEN);
+    throw new ApiError(CAMPAIGN_FORBIDDEN, response.status);
   }
   if (response.status === 404) {
-    throw new ApiError(CAMPAIGN_NOT_FOUND);
+    throw new ApiError(CAMPAIGN_NOT_FOUND, response.status);
   }
   if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as Campaign;
+}
+
+export async function joinCampaign(secret: string): Promise<Campaign> {
+  let response: Response;
+  try {
+    response = await fetch('/api/campaigns/join', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+  } catch {
+    throw new ApiError(NETWORK_ERROR);
+  }
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new ApiError(JOIN_RATE_LIMIT);
+    }
+    if (response.status === 404) {
+      throw new ApiError(INVITATION_NOT_FOUND);
+    }
+    if (response.status === 403) {
+      throw new ApiError(CAMPAIGN_FORBIDDEN);
+    }
+    if (response.status === 422) {
+      throw new ApiError(JOIN_INVALID);
+    }
+    if (response.status === 409) {
+      const detail = await readErrorDetail(response);
+      if (detail === 'campaign_full') {
+        throw new ApiError(CAMPAIGN_FULL);
+      }
+      if (detail === 'nickname_taken') {
+        throw new ApiError(NICKNAME_TAKEN);
+      }
+      throw new ApiError(detail);
+    }
+    throw new ApiError(await readErrorDetail(response));
+  }
+  return (await response.json()) as Campaign;
+}
+
+export async function revokeInvitation(campaignId: string): Promise<Campaign> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/invitation/revoke`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new ApiError(NETWORK_ERROR);
+  }
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new ApiError(REVOKE_RATE_LIMIT);
+    }
+    if (response.status === 403) {
+      throw new ApiError(CAMPAIGN_FORBIDDEN);
+    }
+    if (response.status === 404) {
+      throw new ApiError(CAMPAIGN_NOT_FOUND);
+    }
     throw new ApiError(await readErrorDetail(response));
   }
   return (await response.json()) as Campaign;

@@ -44,6 +44,11 @@ members = sa.Table(
     sa.Column("role", sa.Text(), nullable=False),
     sa.Column("joined_at", sa.Text(), nullable=False),
     sa.PrimaryKeyConstraint("campaign_id", "guest_id", name="pk_campaigns_members"),
+    sa.UniqueConstraint(
+        "campaign_id",
+        "nickname",
+        name="uq_campaigns_members_campaign_id_nickname",
+    ),
 )
 
 __all__ = ["campaigns", "members", "metadata"]

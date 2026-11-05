@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from dunvyr.campaigns.domain.max_seats import DEFAULT_MAX_SEATS
 
@@ -13,6 +13,10 @@ from dunvyr.campaigns.domain.max_seats import DEFAULT_MAX_SEATS
 class CreateCampaignRequest(BaseModel):
     name: str
     max_seats: int = DEFAULT_MAX_SEATS
+
+
+class JoinCampaignRequest(BaseModel):
+    secret: str = Field(min_length=1)
 
 
 class CampaignMemberResponse(BaseModel):

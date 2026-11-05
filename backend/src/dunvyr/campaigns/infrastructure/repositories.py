@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import case, select
-from sqlalchemy.engine import RowMapping
+from sqlalchemy import case, func, literal, select, update
+from sqlalchemy.engine import CursorResult, RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from dunvyr.campaigns.application.errors import DuplicateIdempotencyKey
+from dunvyr.campaigns.application.errors import DuplicateIdempotencyKey, MembershipInsertConflict
 from dunvyr.campaigns.domain.campaign import Campaign
 from dunvyr.campaigns.domain.invitation import Invitation
 from dunvyr.campaigns.domain.max_seats import MaxSeats
@@ -103,6 +104,75 @@ class SqlAlchemyCampaignRepository:
         if campaign_id is None:
             return None
         return self.get(UUID(campaign_id))
+
+    def find_by_invitation_token_hash(self, token_hash: str) -> Campaign | None:
+        campaign_id = self._session.execute(
+            select(tables.campaigns.c.id).where(
+                tables.campaigns.c.invitation_token_hash == token_hash,
+            )
+        ).scalar_one_or_none()
+        if campaign_id is None:
+            return None
+        return self.get(UUID(campaign_id))
+
+    def add_member_if_seats_available(
+        self,
+        campaign_id: UUID,
+        membership: Membership,
+    ) -> bool:
+        """Insert one membership only while a seat is free and the invite lives.
+
+        Seat availability, invitation activity and the insert are a single SQL
+        statement, so SQLite itself decides a concurrent join/revoke race: the
+        loser inserts no row and receives ``False``. A failed statement also
+        rolls back the stale read snapshot so the caller can re-read fresh
+        state. Uniqueness races surface as ``MembershipInsertConflict``.
+        """
+        campaign_id_text = str(campaign_id)
+        seats_taken = (
+            select(func.count())
+            .select_from(tables.members)
+            .where(tables.members.c.campaign_id == campaign_id_text)
+            .scalar_subquery()
+        )
+        max_seats = (
+            select(tables.campaigns.c.max_seats)
+            .where(tables.campaigns.c.id == campaign_id_text)
+            .scalar_subquery()
+        )
+        invitation_revoked = (
+            select(tables.campaigns.c.invitation_revoked)
+            .where(tables.campaigns.c.id == campaign_id_text)
+            .scalar_subquery()
+        )
+        statement = tables.members.insert().from_select(
+            ["campaign_id", "guest_id", "nickname", "role", "joined_at"],
+            select(
+                literal(campaign_id_text),
+                literal(str(membership.guest_id)),
+                literal(membership.nickname),
+                literal(membership.role.value),
+                literal(_to_text(membership.joined_at)),
+            ).where(seats_taken < max_seats, invitation_revoked.is_(False)),
+        )
+        try:
+            result = cast(CursorResult[Any], self._session.execute(statement))
+        except IntegrityError as error:
+            self._session.rollback()
+            raise MembershipInsertConflict from error
+        if result.rowcount != 1:
+            # No row was inserted; end the stale read transaction before the
+            # service re-reads the campaign to explain the failure.
+            self._session.rollback()
+            return False
+        return True
+
+    def update_invitation(self, campaign_id: UUID, invitation: Invitation) -> None:
+        self._session.execute(
+            update(tables.campaigns)
+            .where(tables.campaigns.c.id == str(campaign_id))
+            .values(invitation_revoked=invitation.revoked)
+        )
 
 
 def _to_campaign(row: RowMapping, member_rows: Sequence[RowMapping]) -> Campaign:

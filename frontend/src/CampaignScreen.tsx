@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { Campaign } from './api';
+import { revokeInvitation, type Campaign } from './api';
 
 interface CampaignScreenProps {
   campaign: Campaign;
@@ -9,8 +9,13 @@ interface CampaignScreenProps {
 
 export function CampaignScreen({ campaign, currentGuestId }: CampaignScreenProps) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const secret = campaign.invitation.secret;
-  const invitationPath = campaign.invitation.path ?? (secret === null ? null : `/join/${secret}`);
+  const [invitation, setInvitation] = useState(campaign.invitation);
+  const [revokeStatus, setRevokeStatus] = useState<'idle' | 'revoking' | 'failed'>('idle');
+  const isOrganizer = campaign.organizer_id === currentGuestId;
+  const secret = invitation.active ? invitation.secret : null;
+  const invitationPath = invitation.active
+    ? (invitation.path ?? (secret === null ? null : `/join/${secret}`))
+    : null;
   const invitationUrl =
     invitationPath === null ? null : new URL(invitationPath, window.location.origin).toString();
 
@@ -26,6 +31,17 @@ export function CampaignScreen({ campaign, currentGuestId }: CampaignScreenProps
     }
   }
 
+  async function handleRevoke() {
+    setRevokeStatus('revoking');
+    try {
+      const updated = await revokeInvitation(campaign.id);
+      setInvitation(updated.invitation);
+      setRevokeStatus('idle');
+    } catch {
+      setRevokeStatus('failed');
+    }
+  }
+
   return (
     <section className="campaign" aria-labelledby="campaign-title">
       <h2 id="campaign-title" className="campaign__title">
@@ -35,27 +51,48 @@ export function CampaignScreen({ campaign, currentGuestId }: CampaignScreenProps
         Мест занято: {campaign.members.length} из {campaign.max_seats}
       </p>
 
-      <h3 className="campaign__subtitle">Ссылка-приглашение</h3>
-      {invitationUrl === null ? (
-        <p className="campaign__note">
-          Ссылка-приглашение показывается только один раз при создании кампании.
-        </p>
-      ) : (
+      {isOrganizer && (
         <>
-          <p className="campaign__invitation">
-            <a href={invitationUrl}>{invitationUrl}</a>
-          </p>
-          <button type="button" className="campaign__copy" onClick={handleCopy}>
-            Скопировать ссылку
-          </button>
-          {copyStatus === 'copied' && (
-            <p className="campaign__copy-status" role="status">
-              Ссылка скопирована
+          <h3 className="campaign__subtitle">Ссылка-приглашение</h3>
+          {!invitation.active ? (
+            <p className="campaign__note">Ссылка отозвана</p>
+          ) : invitationUrl === null ? (
+            <p className="campaign__note">
+              Ссылка-приглашение показывается только один раз при создании кампании.
             </p>
+          ) : (
+            <>
+              <p className="campaign__invitation">
+                <a href={invitationUrl}>{invitationUrl}</a>
+              </p>
+              <button type="button" className="campaign__copy" onClick={handleCopy}>
+                Скопировать ссылку
+              </button>
+              {copyStatus === 'copied' && (
+                <p className="campaign__copy-status" role="status">
+                  Ссылка скопирована
+                </p>
+              )}
+              {copyStatus === 'failed' && (
+                <p className="campaign__copy-status campaign__error" role="alert">
+                  Не удалось скопировать ссылку. Выделите её вручную.
+                </p>
+              )}
+            </>
           )}
-          {copyStatus === 'failed' && (
-            <p className="campaign__copy-status campaign__error" role="alert">
-              Не удалось скопировать ссылку. Выделите её вручную.
+          {invitation.active && (
+            <button
+              type="button"
+              className="campaign__revoke"
+              onClick={handleRevoke}
+              disabled={revokeStatus === 'revoking'}
+            >
+              {revokeStatus === 'revoking' ? 'Отзываем…' : 'Отозвать ссылку'}
+            </button>
+          )}
+          {revokeStatus === 'failed' && (
+            <p className="campaign__error" role="alert">
+              Не удалось отозвать ссылку. Попробуйте ещё раз.
             </p>
           )}
         </>

@@ -225,6 +225,114 @@ def test_campaign_revocation_makes_the_invitation_inactive() -> None:
 
 
 @pytest.mark.unit
+def test_join_adds_a_player_with_the_guest_nickname_snapshot() -> None:
+    campaign = build_campaign(max_seats=4)
+    joined_at = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+
+    joined = campaign.join(PLAYER_ID, "Боб", joined_at)
+
+    assert joined is not campaign
+    assert joined.members[-1] == Membership(
+        guest_id=PLAYER_ID,
+        nickname="Боб",
+        role=MemberRole.PLAYER,
+        joined_at=joined_at,
+    )
+    assert joined.seats_taken == 2
+    assert joined.free_seats == 2
+    assert campaign.seats_taken == 1
+    assert campaign.invitation == joined.invitation
+
+
+@pytest.mark.unit
+def test_join_is_idempotent_for_an_existing_member() -> None:
+    campaign = build_campaign(max_seats=2)
+
+    replay = campaign.join(ORGANIZER_ID, "Алиса", datetime(2026, 1, 1, 13, 0, tzinfo=UTC))
+
+    assert replay is campaign
+    assert replay.members == campaign.members
+    assert replay.seats_taken == 1
+
+
+@pytest.mark.unit
+def test_join_replay_does_not_need_an_active_invitation_or_free_seats() -> None:
+    campaign = build_campaign(max_seats=2)
+    full = replace(
+        campaign,
+        members=(
+            campaign.members[0],
+            Membership(
+                guest_id=PLAYER_ID,
+                nickname="Боб",
+                role=MemberRole.PLAYER,
+                joined_at=NOW,
+            ),
+        ),
+    )
+    revoked_full = full.revoke_invitation()
+
+    assert revoked_full.join(ORGANIZER_ID, "Алиса", NOW) is revoked_full
+    assert revoked_full.join(PLAYER_ID, "Боб", NOW) is revoked_full
+
+
+@pytest.mark.unit
+def test_join_rejects_a_revoked_invitation() -> None:
+    campaign = build_campaign().revoke_invitation()
+
+    with pytest.raises(InvalidCampaign, match="invitation is not active"):
+        campaign.join(PLAYER_ID, "Боб", NOW)
+
+
+@pytest.mark.unit
+def test_join_rejects_a_campaign_without_free_seats() -> None:
+    campaign = build_campaign(max_seats=2)
+    full = replace(
+        campaign,
+        members=(
+            campaign.members[0],
+            Membership(
+                guest_id=PLAYER_ID,
+                nickname="Боб",
+                role=MemberRole.PLAYER,
+                joined_at=NOW,
+            ),
+        ),
+    )
+    third_id = UUID("77777777-7777-4777-8777-777777777777")
+
+    with pytest.raises(InvalidCampaign, match="no free seats"):
+        full.join(third_id, "Кэрол", NOW)
+
+
+@pytest.mark.unit
+def test_join_rejects_a_nickname_already_used_in_the_campaign() -> None:
+    campaign = build_campaign()
+
+    with pytest.raises(InvalidCampaign, match="nickname is already taken"):
+        campaign.join(PLAYER_ID, "Алиса", NOW)
+
+
+@pytest.mark.unit
+def test_join_compares_nicknames_case_sensitively() -> None:
+    campaign = build_campaign()
+
+    joined = campaign.join(PLAYER_ID, "алиса", NOW)
+
+    assert {member.nickname for member in joined.members} == {"Алиса", "алиса"}
+
+
+@pytest.mark.unit
+def test_join_validates_the_membership_nickname_and_timestamp() -> None:
+    campaign = build_campaign()
+
+    with pytest.raises(InvalidMembership):
+        campaign.join(PLAYER_ID, "  ", NOW)
+    with pytest.raises(InvalidMembership):
+        campaign.join(PLAYER_ID, "Боб", datetime(2026, 1, 1, 13, 0))
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("nickname", ["", "   ", "x" * 33, "Alice\nSecond"])
 def test_membership_rejects_invalid_nicknames(nickname: str) -> None:
     with pytest.raises(InvalidMembership):

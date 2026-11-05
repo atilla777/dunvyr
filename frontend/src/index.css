@@ -118,7 +118,8 @@ body {
 }
 
 .campaign-create__button,
-.campaign__copy {
+.campaign__copy,
+.join__button {
   min-height: 44px;
   padding: 0.6rem 1rem;
   border: 0;
@@ -129,15 +130,49 @@ body {
   font: inherit;
 }
 
-.campaign-create__button:disabled {
+.campaign-create__button:disabled,
+.join__button:disabled,
+.campaign__revoke:disabled {
   cursor: progress;
   opacity: 0.7;
 }
 
 .campaign-create__error,
-.campaign__error {
+.campaign__error,
+.join__error {
   margin: 0;
   color: #b42318;
+}
+
+.join {
+  display: flex;
+  width: min(24rem, 100%);
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.join__title {
+  margin: 0;
+}
+
+.join__note {
+  margin: 0;
+  color: #57606a;
+}
+
+.campaign__revoke {
+  align-self: flex-start;
+  min-height: 44px;
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #b42318;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
 }
 
 .campaign {
@@ -210,14 +245,16 @@ body {
   }
 
   .campaign-create__error,
-  .campaign__error {
+  .campaign__error,
+  .join__error {
     color: #ff7b72;
   }
 
   .campaign__seats,
   .campaign__note,
   .campaign__member-role,
-  .campaign__member-self {
+  .campaign__member-self,
+  .join__note {
     color: #a6adb5;
   }
 }

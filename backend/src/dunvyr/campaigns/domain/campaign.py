@@ -17,6 +17,18 @@ class InvalidCampaign(ValueError):
     """Raised when a campaign aggregate violates its invariants."""
 
 
+class InvitationInactive(InvalidCampaign):
+    """The invitation no longer accepts new guests."""
+
+
+class CampaignFull(InvalidCampaign):
+    """Every seat of the campaign is already taken."""
+
+
+class NicknameTaken(InvalidCampaign):
+    """Another member already uses the requested display nickname."""
+
+
 @dataclass(frozen=True, slots=True)
 class Campaign:
     """A campaign group with exactly one organizer and one invitation.
@@ -121,3 +133,32 @@ class Campaign:
     def revoke_invitation(self) -> Campaign:
         """Return a copy with an inactive invitation; the original is unchanged."""
         return replace(self, invitation=self.invitation.revoke())
+
+    def join(self, guest_id: UUID, nickname: str, now: datetime) -> Campaign:
+        """Add a player membership or return this aggregate for a replay.
+
+        Rejoining is idempotent and never consumes a second seat, even after
+        the invitation was revoked or the campaign filled up. New guests need
+        an active invitation, a free seat and a nickname unique in the campaign
+        (exact, case-sensitive comparison); the nickname is a fresh snapshot.
+        """
+        if self.has_member(guest_id):
+            return self
+        if not self.invitation.is_active:
+            raise InvitationInactive("Campaign invitation is not active")
+        if not self.has_free_seats:
+            raise CampaignFull("Campaign has no free seats")
+        if any(member.nickname == nickname for member in self.members):
+            raise NicknameTaken("Campaign nickname is already taken")
+        return replace(
+            self,
+            members=(
+                *self.members,
+                Membership(
+                    guest_id=guest_id,
+                    nickname=nickname,
+                    role=MemberRole.PLAYER,
+                    joined_at=now,
+                ),
+            ),
+        )

@@ -44,3 +44,14 @@ def test_campaign_members_reference_the_owned_campaign_table() -> None:
     assert [fk.target_fullname for fk in foreign_keys] == ["campaigns_campaigns.id"]
     assert tables.members.c.campaign_id.primary_key
     assert tables.members.c.guest_id.primary_key
+
+
+@pytest.mark.unit
+def test_campaigns_schema_makes_member_nicknames_unique_per_campaign() -> None:
+    unique_constraints = [
+        tuple(column.name for column in constraint.columns)
+        for constraint in tables.members.constraints
+        if isinstance(constraint, UniqueConstraint)
+    ]
+
+    assert ("campaign_id", "nickname") in unique_constraints

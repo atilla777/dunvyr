@@ -10,6 +10,10 @@ from dunvyr.campaigns.application.errors import (
     CampaignAccessDenied,
     CampaignNotFound,
     DuplicateIdempotencyKey,
+    InvitationUnavailable,
+    MembershipInsertConflict,
+    NicknameTaken,
+    NoFreeSeats,
 )
 from dunvyr.campaigns.application.ports import (
     Clock,
@@ -17,8 +21,15 @@ from dunvyr.campaigns.application.ports import (
     InvitationSecretGenerator,
     UnitOfWork,
 )
-from dunvyr.campaigns.domain.campaign import Campaign
-from dunvyr.campaigns.domain.invitation import Invitation
+from dunvyr.campaigns.domain.campaign import (
+    Campaign,
+    CampaignFull,
+    InvitationInactive,
+)
+from dunvyr.campaigns.domain.campaign import (
+    NicknameTaken as DomainNicknameTaken,
+)
+from dunvyr.campaigns.domain.invitation import Invitation, hash_invitation_secret
 from dunvyr.campaigns.domain.max_seats import MaxSeats
 from dunvyr.campaigns.domain.membership import MemberRole
 from dunvyr.campaigns.domain.name import CampaignName
@@ -31,6 +42,13 @@ class CreateCampaign:
     name: str
     max_seats: int
     idempotency_key: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class JoinCampaign:
+    secret: str
+    guest_id: UUID
+    guest_nickname: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +75,12 @@ class IssuedCampaign:
     campaign: CampaignView
     invitation_secret: str | None
     created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class JoinedCampaign:
+    campaign: CampaignView
+    joined: bool
 
 
 def _view(campaign: Campaign) -> CampaignView:
@@ -143,3 +167,67 @@ class CampaignService:
         if not campaign.has_member(viewer_id):
             raise CampaignAccessDenied
         return _view(campaign)
+
+    def join_campaign(self, command: JoinCampaign) -> JoinedCampaign:
+        """Join by invitation secret; a repeated join replays without a new seat."""
+        token_hash = hash_invitation_secret(command.secret)
+        campaign = self._unit_of_work.campaigns.find_by_invitation_token_hash(token_hash)
+        if campaign is None or not campaign.invitation.is_active:
+            raise InvitationUnavailable
+        if campaign.has_member(command.guest_id):
+            return JoinedCampaign(campaign=_view(campaign), joined=False)
+
+        try:
+            joined = campaign.join(command.guest_id, command.guest_nickname, self._clock())
+        except InvitationInactive as error:
+            raise InvitationUnavailable from error
+        except CampaignFull as error:
+            raise NoFreeSeats from error
+        except DomainNicknameTaken as error:
+            raise NicknameTaken from error
+
+        membership = joined.members[-1]
+        try:
+            inserted = self._unit_of_work.campaigns.add_member_if_seats_available(
+                campaign.id,
+                membership,
+            )
+            if not inserted:
+                # The insert lost a seat or revoke race; the read snapshot was
+                # reset by the repository, so re-read before explaining why.
+                current = self._unit_of_work.campaigns.get(campaign.id)
+                if current is None:
+                    raise InvitationUnavailable
+                if current.has_member(command.guest_id):
+                    return JoinedCampaign(campaign=_view(current), joined=False)
+                if not current.invitation.is_active:
+                    raise InvitationUnavailable
+                raise NoFreeSeats
+            self._unit_of_work.commit()
+        except MembershipInsertConflict:
+            # A concurrent row made the member insert fail: either this guest
+            # already joined (replay) or another member owns the nickname.
+            current = self._unit_of_work.campaigns.get(campaign.id)
+            if current is not None and current.has_member(command.guest_id):
+                return JoinedCampaign(campaign=_view(current), joined=False)
+            if current is not None and any(
+                member.nickname == command.guest_nickname for member in current.members
+            ):
+                raise NicknameTaken from None
+            raise
+        return JoinedCampaign(campaign=_view(joined), joined=True)
+
+    def revoke_invitation(self, campaign_id: UUID, actor_id: UUID) -> CampaignView:
+        """Revoke the campaign invitation; only its organizer may do so."""
+        campaign = self._unit_of_work.campaigns.get(campaign_id)
+        if campaign is None:
+            raise CampaignNotFound
+        if not campaign.is_organizer(actor_id):
+            raise CampaignAccessDenied
+        if not campaign.invitation.is_active:
+            return _view(campaign)
+
+        revoked = campaign.revoke_invitation()
+        self._unit_of_work.campaigns.update_invitation(campaign_id, revoked.invitation)
+        self._unit_of_work.commit()
+        return _view(revoked)

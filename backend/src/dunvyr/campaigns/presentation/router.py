@@ -7,11 +7,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
-from dunvyr.campaigns.application.errors import CampaignAccessDenied, CampaignNotFound
+from dunvyr.campaigns.application.errors import (
+    CampaignAccessDenied,
+    CampaignNotFound,
+    InvitationUnavailable,
+    NicknameTaken,
+    NoFreeSeats,
+)
 from dunvyr.campaigns.application.service import (
     CampaignService,
     CampaignView,
     CreateCampaign,
+    JoinCampaign,
 )
 from dunvyr.campaigns.domain.max_seats import InvalidMaxSeats
 from dunvyr.campaigns.domain.name import InvalidCampaignName
@@ -22,9 +29,11 @@ from dunvyr.campaigns.presentation.schemas import (
     CampaignMemberResponse,
     CampaignResponse,
     CreateCampaignRequest,
+    JoinCampaignRequest,
 )
 from dunvyr.campaigns.presentation.security import (
     enforce_campaign_rate_limit,
+    enforce_join_rate_limit,
     require_allowed_origin,
 )
 from dunvyr.identity.public import GuestSnapshot
@@ -107,6 +116,47 @@ def create_campaign(
     return _to_response(issued.campaign, issued.invitation_secret)
 
 
+@router.post(
+    "/join",
+    status_code=status.HTTP_201_CREATED,
+    response_model=CampaignResponse,
+    dependencies=[Depends(require_allowed_origin), Depends(enforce_join_rate_limit)],
+)
+def join_campaign(
+    payload: JoinCampaignRequest,
+    guest: Guest,
+    service: Service,
+    response: Response,
+) -> CampaignResponse:
+    """Join by invitation secret; a repeat join replays the same membership."""
+    try:
+        joined = service.join_campaign(
+            JoinCampaign(
+                secret=payload.secret,
+                guest_id=guest.id,
+                guest_nickname=guest.nickname,
+            )
+        )
+    except InvitationUnavailable as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="not_found",
+        ) from error
+    except NoFreeSeats as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="campaign_full",
+        ) from error
+    except NicknameTaken as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="nickname_taken",
+        ) from error
+
+    response.status_code = status.HTTP_201_CREATED if joined.joined else status.HTTP_200_OK
+    return _to_response(joined.campaign)
+
+
 @router.get("/{campaign_id}", response_model=CampaignResponse)
 def get_campaign(
     campaign_id: UUID,
@@ -116,6 +166,32 @@ def get_campaign(
     """Return a campaign only to its members; the secret is never repeated."""
     try:
         view = service.get_campaign(campaign_id, guest.id)
+    except CampaignNotFound as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="not_found",
+        ) from error
+    except CampaignAccessDenied as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="forbidden",
+        ) from error
+    return _to_response(view)
+
+
+@router.post(
+    "/{campaign_id}/invitation/revoke",
+    response_model=CampaignResponse,
+    dependencies=[Depends(require_allowed_origin), Depends(enforce_campaign_rate_limit)],
+)
+def revoke_invitation(
+    campaign_id: UUID,
+    guest: Guest,
+    service: Service,
+) -> CampaignResponse:
+    """Revoke the invitation; only the organizer may do so."""
+    try:
+        view = service.revoke_invitation(campaign_id, guest.id)
     except CampaignNotFound as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

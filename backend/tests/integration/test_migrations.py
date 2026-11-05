@@ -42,7 +42,7 @@ def test_migration_head_is_recorded(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert version == "0003"
+    assert version == "0004"
 
 
 @pytest.mark.integration
@@ -68,7 +68,9 @@ def test_campaigns_tables_use_owned_prefix_and_database_uniqueness(
             name for name in inspect(connection).get_table_names() if name.startswith("campaigns_")
         }
         campaign_unique = inspect(connection).get_unique_constraints("campaigns_campaigns")
+        member_unique = inspect(connection).get_unique_constraints("campaigns_members")
         member_primary_key = inspect(connection).get_pk_constraint("campaigns_members")
+        member_foreign_keys = inspect(connection).get_foreign_keys("campaigns_members")
 
     assert campaigns_tables == {"campaigns_campaigns", "campaigns_members"}
     assert any(
@@ -78,4 +80,14 @@ def test_campaigns_tables_use_owned_prefix_and_database_uniqueness(
         constraint["column_names"] == ["organizer_id", "idempotency_key"]
         for constraint in campaign_unique
     )
+    assert any(
+        constraint["column_names"] == ["campaign_id", "nickname"] for constraint in member_unique
+    )
     assert member_primary_key["constrained_columns"] == ["campaign_id", "guest_id"]
+    assert any(
+        foreign_key["constrained_columns"] == ["campaign_id"]
+        and foreign_key["referred_table"] == "campaigns_campaigns"
+        and foreign_key["referred_columns"] == ["id"]
+        and foreign_key["options"].get("ondelete") == "CASCADE"
+        for foreign_key in member_foreign_keys
+    )

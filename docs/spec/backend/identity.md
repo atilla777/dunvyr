@@ -11,7 +11,7 @@
 
 ## Публичный контракт (`dunvyr/identity/public/`)
 
-Для будущих потребителей (campaigns и поздние контексты): `GuestSnapshot` (замороженный dataclass `id: UUID`, `nickname: str`) и `GuestResolver` (`Protocol`, `resolve_guest(session_token: str | None) -> GuestSnapshot | None`) — его удовлетворяет `IdentityService`. Public не импортирует внутренние слои (import-linter), не экспортирует ORM/SQLAlchemy/Pydantic.
+Для будущих потребителей (campaigns и поздние контексты): `GuestSnapshot` (замороженный dataclass `id: UUID`, `nickname: str`) и `GuestResolver` (`Protocol`, `resolve_guest(session_token: str | None) -> GuestSnapshot | None`) — его удовлетворяет `IdentityService`. С задачей dunvyr-u4k.2 контракт расширен аддитивно константой `SESSION_COOKIE_NAME = "dunvyr_session"` (единый источник истины об имени cookie: `identity/presentation/config.py` импортирует её из public; первый потребитель — campaigns, см. [campaigns](campaigns.md)). Public не импортирует внутренние слои (import-linter), не экспортирует ORM/SQLAlchemy/Pydantic.
 
 ## Application и infrastructure
 
@@ -35,7 +35,7 @@
 
 ## Архитектурные контракты
 
-Import Linter — 8 контрактов: 4 скелетных (см. [backend/skeleton](skeleton.md)) + 4 identity: слои `presentation > application > domain` и `infrastructure > application > domain`; запрет `identity.public` импортировать внутренние слои; запрет `identity.domain` импортировать внешние слои (включая public). Независимость контекстов (запрет импорта campaigns и других) покрывается скелетным контрактом независимости.
+Import Linter — контракты identity (4): слои `presentation > application > domain` и `infrastructure > application > domain`; запрет `identity.public` импортировать внутренние слои; запрет `identity.domain` импортировать внешние слои (включая public). Изоляция от чужих внутренних слоёв покрывается скелетным контрактом запрета внутренних слоёв (с u4k.2 межконтекстные импорты допустимы только через `public/` — campaigns потребляет `identity.public` легитимно); итоговое число контрактов проекта — [backend/skeleton](skeleton.md).
 
 ## Проверки на введённом снимке
 
@@ -43,4 +43,4 @@ Import Linter — 8 контрактов: 4 скелетных (см. [backend/s
 
 ## Ограничения (ещё не существует)
 
-Выход (logout), смена псевдонима, кампании/приглашения, чат/WebSocket, presence — следующие задачи вехи. Rate limit и счётчики — per-process: несколько uvicorn-workers не поддерживаются (однопроцессный MVP). В dev-потоке все браузеры обращаются к backend через Vite-прокси с одного loopback-адреса, поэтому весь LAN делит один бакет лимита созданий сессий (10/60с); POST, отклонённые по Origin, не расходуют лимит (origin-проверка выполняется до лимитера). Уникальность псевдонимов сознательно не enforced. `fetchCurrentGuest` на фронтенде трактует любой не-OK ответ как «аноним» и показывает форму входа (тонкий срез).
+Выход (logout), смена псевдонима, чат/WebSocket, presence — следующие задачи вехи. Кампании (срез организатора) реализованы задачей dunvyr-u4k.2 — [campaigns](campaigns.md); присоединение по приглашению и отзыв — u4k.3. Rate limit и счётчики — per-process: несколько uvicorn-workers не поддерживаются (однопроцессный MVP). В dev-потоке все браузеры обращаются к backend через Vite-прокси с одного loopback-адреса, поэтому весь LAN делит один бакет лимита созданий сессий (10/60с); POST, отклонённые по Origin, не расходуют лимит (origin-проверка выполняется до лимитера). Уникальность псевдонимов сознательно не enforced. `fetchCurrentGuest` на фронтенде трактует любой не-OK ответ как «аноним» и показывает форму входа (тонкий срез).

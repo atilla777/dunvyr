@@ -1,0 +1,68 @@
+name: CI
+
+# Пост-фактум подтверждение публикации в main: тот же полный gate, что и локально.
+# Один job сохраняет порядок и общий снимок для всех проверок `make test-ci`.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: workflow только читает репозиторий, секреты не нужны.
+permissions:
+  contents: read
+
+jobs:
+  test-ci:
+    # ubuntu-24.04 закреплён для воспроизводимости; Playwright официально поддерживает 24.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Мажорные теги actions закреплены (не @main), чтобы прогон был воспроизводимым.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Ставит mise, читает mise.toml (Python, uv, Node), выполняет mise install
+      # и экспортирует PATH для последующих шагов; кэш инструментов mise включён по умолчанию.
+      - name: Toolchain из mise.toml
+        uses: jdx/mise-action@v4
+
+      # Кэши ускоряют повторные прогоны; ключи привязаны к lock-файлам,
+      # поэтому изменение зависимостей автоматически сбрасывает кэш.
+      - name: Кэш uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ hashFiles('backend/uv.lock') }}
+          restore-keys: |
+            uv-
+
+      - name: Кэш npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            npm-
+
+      # Версия @playwright/test зафиксирована в frontend/package-lock.json,
+      # поэтому ключ кэша браузеров совпадает с ключом npm.
+      - name: Кэш браузеров Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-
+
+      # Тот же набор, что локально: uv sync, npm ci и Chromium.
+      - name: Установка зависимостей
+        run: make setup
+
+      # Системные библиотеки Chromium на hosted runner (локальные команды не меняются).
+      - name: Системные библиотеки Chromium
+        run: cd frontend && mise exec -- npx playwright install-deps chromium
+
+      # Полный gate: unit + architecture + Vitest, integration, E2E smoke.
+      # E2E-серверы Playwright поднимает сам на loopback с SQLite в памяти.
+      - name: Полный gate
+        run: make test-ci

@@ -2,7 +2,7 @@
 
 Dunvyr — локальная многопользовательская веб-платформа для совместных настольных RPG с AI Dungeon Master. Первый вертикальный продукт: короткое законченное киберпанк-приключение на 1–2 встречи; правила универсальны для разных сеттингов.
 
-**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. Корневой `Makefile`, git hooks и Playwright E2E smoke (desktop + mobile) уже созданы; CI GitHub Actions ещё не создан — это следующая bootstrap-задача.
+**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. Корневой `Makefile`, git hooks, Playwright E2E smoke (desktop + mobile) и CI GitHub Actions (`.github/workflows/ci.yml`, push в `main` и ручной запуск) уже созданы.
 
 ## Где читать
 
@@ -122,6 +122,10 @@ DUNVYR_E2E_BACKEND_PORT=8101 DUNVYR_E2E_FRONTEND_PORT=5274 make test-e2e-smoke
 Браузеры устанавливаются `make setup` (Chromium; desktop- и mobile-проекты используют один и тот же браузер) и кэшируются в `~/.cache/ms-playwright`. Если в системе не хватает системных библиотек, поставьте их вместе с браузером: `cd frontend && mise exec -- npx playwright install --with-deps chromium`. Артефакты прогонов (`frontend/test-results/`, `frontend/playwright-report/`) в Git не попадают.
 
 `make test-ci` — полный локальный gate публикации: `test-unit` (unit + `lint-imports` + frontend Vitest), `test-integration` и `test-e2e-smoke`. `make test-e2e-full` сейчас запускает тот же набор, что и smoke, — осознанное совпадение до появления расширенных E2E-сценариев.
+
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` запускается на push в `main` и вручную через `workflow_dispatch` (Actions → CI → Run workflow). На `ubuntu-24.04` он ставит toolchain из `mise.toml` через `mise-action`, выполняет `make setup` и `make test-ci`, кэшируя uv, npm и браузеры Playwright; секреты и реальный AI не нужны. Результаты видны в разделе Actions репозитория на GitHub. CI — пост-фактум подтверждение после публикации, а не замена локального gate.
 
 ## Git hooks
 

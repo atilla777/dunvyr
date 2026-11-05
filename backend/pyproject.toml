@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dunvyr-backend"
+version = "0.1.0"
+description = "Backend skeleton for the Dunvyr modular monolith."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "alembic",
+    "fastapi",
+    "sqlalchemy>=2.0,<3.0",
+    "uvicorn",
+]
+
+[dependency-groups]
+dev = [
+    "httpx",
+    "import-linter",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dunvyr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: fast unit tests without I/O or a database",
+    "integration: integration tests running the app against a migrated SQLite database",
+]
+
+[tool.ruff]
+target-version = "py314"
+src = ["src", "tests", "migrations"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dunvyr"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src/dunvyr", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+
+[tool.importlinter]
+root_packages = ["dunvyr"]
+
+[[tool.importlinter.contracts]]
+name = "Domain contexts are mutually independent"
+type = "independence"
+modules = [
+    "dunvyr.identity",
+    "dunvyr.campaigns",
+    "dunvyr.characters",
+    "dunvyr.adventures",
+    "dunvyr.gameplay",
+    "dunvyr.communication",
+    "dunvyr.narration",
+]
+
+[[tool.importlinter.contracts]]
+name = "Shared primitives do not import domain contexts"
+type = "forbidden"
+source_modules = ["dunvyr.shared"]
+forbidden_modules = [
+    "dunvyr.identity",
+    "dunvyr.campaigns",
+    "dunvyr.characters",
+    "dunvyr.adventures",
+    "dunvyr.gameplay",
+    "dunvyr.communication",
+    "dunvyr.narration",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contexts do not import foreign domain/application/infrastructure layers"
+type = "forbidden"
+source_modules = [
+    "dunvyr.identity",
+    "dunvyr.campaigns",
+    "dunvyr.characters",
+    "dunvyr.adventures",
+    "dunvyr.gameplay",
+    "dunvyr.communication",
+    "dunvyr.narration",
+]
+forbidden_modules = [
+    "dunvyr.*.domain",
+    "dunvyr.*.application",
+    "dunvyr.*.infrastructure",
+]
+
+[[tool.importlinter.contracts]]
+name = "Application layering (composition root > presentation > infrastructure)"
+type = "layers"
+layers = [
+    "dunvyr.main",
+    "dunvyr.presentation",
+    "dunvyr.infrastructure",
+]

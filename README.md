@@ -2,7 +2,7 @@
 
 Dunvyr — локальная многопользовательская веб-платформа для совместных настольных RPG с AI Dungeon Master. Первый вертикальный продукт: короткое законченное киберпанк-приключение на 1–2 встречи; правила универсальны для разных сеттингов.
 
-**Это документационный репозиторий, а не работающий код приложения.** Приложение, `Makefile` и CI ещё не созданы; их создаст первая bootstrap-задача через `/mis-plan` → `/mis-run`.
+**Backend-скелет приложения уже создан** в `backend/`: FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter. Frontend, `Makefile` и CI ещё не созданы — это следующие bootstrap-задачи.
 
 ## Где читать
 
@@ -11,6 +11,29 @@ Dunvyr — локальная многопользовательская веб-
 - [Требования](docs/product/index.md)
 - [Правила](docs/rules/index.md)
 - [Что уже решено и что открыто](docs/product/decisions-and-open-questions.md)
+
+## Backend
+
+Версия Python и `uv` зафиксированы в корневом `mise.toml`; Ruff, mypy, pytest и Import Linter — dev-зависимости проекта из `backend/pyproject.toml`, точные версии — в `backend/uv.lock`.
+
+С чистого клона:
+
+```bash
+mise install                      # ставит Python 3.14.10 и uv из mise.toml
+cd backend
+mise exec -- uv sync              # создаёт backend/.venv из uv.lock
+mise exec -- uv run ruff check .
+mise exec -- uv run ruff format --check .
+mise exec -- uv run mypy
+mise exec -- uv run pytest -m unit
+mise exec -- uv run pytest -m integration
+mise exec -- uv run pytest
+mise exec -- uv run lint-imports
+```
+
+Если mise активирован в shell (`mise activate`), префикс `mise exec --` не нужен: достаточно `uv sync` и `uv run ...` из `backend/`. Проверить версию Python: `mise exec -- python --version` → `Python 3.14.10`.
+
+Integration-тесты применяют настоящий Alembic pipeline к SQLite в памяти (`sqlite+pysqlite:///:memory:`); файл рабочей БД при тестах не создаётся. Миграции вручную: `mise exec -- uv run alembic upgrade head` (URL — из `DUNVYR_DATABASE_URL`, по умолчанию `sqlite:///./dunvyr.db`).
 
 ## Среда агентной разработки (установлена)
 

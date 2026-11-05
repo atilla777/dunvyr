@@ -6,3 +6,16 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Backend (Python / uv / local SQLite)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage*
+coverage.xml
+dist/
+build/

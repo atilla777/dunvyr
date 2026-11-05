@@ -2,7 +2,7 @@
 
 Dunvyr — локальная многопользовательская веб-платформа для совместных настольных RPG с AI Dungeon Master. Первый вертикальный продукт: короткое законченное киберпанк-приключение на 1–2 встречи; правила универсальны для разных сеттингов.
 
-**Backend-скелет приложения уже создан** в `backend/`: FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter. Frontend, `Makefile` и CI ещё не созданы — это следующие bootstrap-задачи.
+**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. `Makefile`, git hooks и CI ещё не созданы — это следующие bootstrap-задачи.
 
 ## Где читать
 

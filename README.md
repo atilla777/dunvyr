@@ -2,7 +2,7 @@
 
 Dunvyr — локальная многопользовательская веб-платформа для совместных настольных RPG с AI Dungeon Master. Первый вертикальный продукт: короткое законченное киберпанк-приключение на 1–2 встречи; правила универсальны для разных сеттингов.
 
-**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. `Makefile`, git hooks и CI ещё не созданы — это следующие bootstrap-задачи.
+**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. Корневой `Makefile` и git hooks уже созданы; Playwright/E2E и CI ещё не созданы — это следующие bootstrap-задачи.
 
 ## Где читать
 
@@ -12,16 +12,31 @@ Dunvyr — локальная многопользовательская веб-
 - [Правила](docs/rules/index.md)
 - [Что уже решено и что открыто](docs/product/decisions-and-open-questions.md)
 
+## Быстрый старт
+
+Нужны Linux, GNU make и `mise` в PATH. Версии Python, `uv` и Node фиксирует корневой `mise.toml`; `mise activate` не обязателен, потому что все цели Makefile запускают команды через `mise exec -- ...`.
+
+```bash
+make setup          # mise install + uv sync (backend) + npm ci (frontend)
+make dev            # backend на :8000 и frontend на :5173, LAN-listener по умолчанию
+make lint
+make test-unit
+make test-integration
+make test-affected SCOPE=backend ARGS='tests/unit/test_app.py'
+make test-affected SCOPE=frontend ARGS='src/App.test.tsx'
+make hooks          # установить pre-commit и pre-push в git hooks
+```
+
+`make help` — список целей. `make test-affected` передаёт нативные селекторы без собственного `--changed`: для `SCOPE=backend` это пути/`-k`/`-m` pytest, для `SCOPE=frontend` — паттерны файлов Vitest; `SCOPE=all` (по умолчанию) передаёт те же `ARGS` обоим стекам. Пустой `ARGS` — usage-ошибка с ненулевым кодом. На тест-целях `RUN=<id>` включает отдельный pytest cache `.pytest_cache/run-<id>`, чтобы параллельные прогоны не делили артефакты.
+
 ## Backend
 
 Версия Python и `uv` зафиксированы в корневом `mise.toml`; Ruff, mypy, pytest и Import Linter — dev-зависимости проекта из `backend/pyproject.toml`, точные версии — в `backend/uv.lock`.
 
-С чистого клона:
+Под капотом `make setup`, `make lint` и тестовых целей (те же команды вручную из `backend/`):
 
 ```bash
-mise install                      # ставит Python 3.14.10 и uv из mise.toml
-cd backend
-mise exec -- uv sync              # создаёт backend/.venv из uv.lock
+mise exec -- uv sync              # создаёт backend/.venv из uv.lock (make setup)
 mise exec -- uv run ruff check .
 mise exec -- uv run ruff format --check .
 mise exec -- uv run mypy
@@ -39,25 +54,52 @@ Integration-тесты применяют настоящий Alembic pipeline к
 
 Версия Node и npm зафиксированы в корневом `mise.toml`; React, Vite, TypeScript, ESLint, Prettier, Vitest и Testing Library — dev-зависимости из `frontend/package.json`, точные версии — в `frontend/package-lock.json`.
 
-С чистого клона:
+Под капотом `make setup`, `make lint` и `make test-unit` (те же команды вручную из `frontend/`):
 
 ```bash
-mise install                      # ставит Node 24.22.2 и остальные инструменты из mise.toml
-cd frontend
-mise exec -- npm ci               # воспроизводимая установка из package-lock.json
+mise exec -- npm ci               # воспроизводимая установка из package-lock.json (make setup)
 mise exec -- npm run lint
 mise exec -- npm run format:check
 mise exec -- npm run typecheck
 mise exec -- npm run test
 ```
 
-Запуск dev-сервера: `mise exec -- npm run dev` → http://localhost:5173 по умолчанию. Для доступа из LAN задайте `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) только после настройки firewall и allowed origins:
-
-```bash
-DUNVYR_DEV_HOST=0.0.0.0 mise exec -- npm run dev
-```
+Запуск dev-сервера: `mise exec -- npm run dev` → http://localhost:5173 по умолчанию. Для доступа из LAN задайте `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) только после настройки firewall и allowed origins; `make dev` делает это для обоих серверов сразу (см. ниже).
 
 Если mise активирован в shell, префикс `mise exec --` не нужен. Проверить версию Node: `mise exec -- node --version` → `v24.22.2`.
+
+## LAN и `make dev`
+
+`make dev` запускает backend и frontend одной командой и печатает локальные и LAN-адреса. Ctrl+C/SIGTERM останавливает оба процесса, не оставляя сирот.
+
+```bash
+make dev                                  # оба сервера на 0.0.0.0 (осознанный LAN-listener)
+DUNVYR_DEV_HOST=127.0.0.1 make dev        # только этот компьютер
+DUNVYR_BACKEND_PORT=9000 DUNVYR_FRONTEND_PORT=5174 make dev
+```
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `DUNVYR_DEV_HOST` | `0.0.0.0` | Адрес прослушивания обоих серверов; для локального режима — `127.0.0.1`. |
+| `DUNVYR_BACKEND_PORT` | `8000` | Порт backend (`GET /health`). |
+| `DUNVYR_FRONTEND_PORT` | `5173` | Порт Vite dev-сервера. |
+
+С другого устройства в той же доверенной LAN открывайте `http://<LAN-IPv4>:5173/` (health backend — `http://<LAN-IPv4>:8000/health`). Использовать `localhost` с телефона нельзя: он указывает на само устройство. Если `DUNVYR_DEV_HOST=127.0.0.1`, доступ из LAN закрыт.
+
+Ограничения и предупреждения:
+
+- Listener `0.0.0.0` открывает порты на всех интерфейсах. Firewall должен разрешать `8000`/`5173` только из доверенной LAN.
+- Обычный HTTP допустим только в доверенной LAN; для доступа из интернета обязателен HTTPS.
+- Backend пока не настраивает CORS/allowed origins. Когда frontend начнёт вызывать API с LAN-адресов, потребуется отдельная настройка; сейчас страница API не вызывает. Это известное будущее ограничение, а не реализованная защита.
+
+## Git hooks
+
+`make hooks` копирует `scripts/hooks/pre-commit` и `scripts/hooks/pre-push` в `$(git rev-parse --git-path hooks)` (именно копирование, чтобы hooks не зависели от расположения worktree):
+
+- `pre-commit` — только staged-файлы: для `.py` из `backend/` запускает `ruff check` и `ruff format --check`; для `.ts/.tsx/.js/.jsx` из `frontend/` — `eslint` и `prettier --check`. Без E2E; если релевантных файлов нет — быстрый выход.
+- `pre-push` — backend `pytest -m unit` + `lint-imports`, frontend `npm run test`; без браузеров.
+
+Hooks переустанавливаются повторным `make hooks`; они не запускают E2E и не заменяют полный gate публикации.
 
 ## Среда агентной разработки (установлена)
 

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Dunvyr pre-commit: быстрый Ruff/ESLint/Prettier только для staged-файлов.
+# Устанавливается через `make hooks` (копированием, не symlink).
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# `git diff --cached` также работает до первого коммита (сравнение с пустым деревом).
+mapfile -t staged_files < <(git diff --cached --name-only --diff-filter=ACMR -- .)
+
+backend_files=()
+frontend_files=()
+for file in "${staged_files[@]}"; do
+  [[ -f "$file" ]] || continue
+  case "$file" in
+    backend/*.py)
+      backend_files+=("${file#backend/}")
+      ;;
+    frontend/*.ts | frontend/*.tsx | frontend/*.js | frontend/*.jsx)
+      frontend_files+=("${file#frontend/}")
+      ;;
+  esac
+done
+
+if (( ${#backend_files[@]} > 0 )); then
+  if [[ ! -x backend/.venv/bin/python ]]; then
+    printf 'pre-commit: не найден backend/.venv; выполни make setup.\n' >&2
+    exit 1
+  fi
+
+  printf 'pre-commit: Ruff для %s Python-файл(ов)...\n' "${#backend_files[@]}"
+  if ! (cd backend && mise exec -- uv run ruff check "${backend_files[@]}"); then
+    printf 'pre-commit: ruff check не прошёл; исправь и повтори commit.\n' >&2
+    exit 1
+  fi
+  if ! (cd backend && mise exec -- uv run ruff format --check "${backend_files[@]}"); then
+    printf 'pre-commit: ruff format --check не прошёл; выполни ruff format.\n' >&2
+    exit 1
+  fi
+fi
+
+if (( ${#frontend_files[@]} > 0 )); then
+  if [[ ! -d frontend/node_modules ]]; then
+    printf 'pre-commit: не найден frontend/node_modules; выполни make setup.\n' >&2
+    exit 1
+  fi
+
+  printf 'pre-commit: ESLint/Prettier для %s frontend-файл(ов)...\n' "${#frontend_files[@]}"
+  if ! (cd frontend && mise exec -- npx eslint "${frontend_files[@]}"); then
+    printf 'pre-commit: eslint не прошёл; исправь и повтори commit.\n' >&2
+    exit 1
+  fi
+  if ! (cd frontend && mise exec -- npx prettier --check "${frontend_files[@]}"); then
+    printf 'pre-commit: prettier --check не прошёл; выполни prettier --write.\n' >&2
+    exit 1
+  fi
+fi
+
+if (( ${#backend_files[@]} == 0 && ${#frontend_files[@]} == 0 )); then
+  exit 0
+fi
+
+printf 'pre-commit: проверки пройдены.\n'
+exit 0

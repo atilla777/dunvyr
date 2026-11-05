@@ -26,21 +26,36 @@ status: accepted
 
 ## Инструменты и цели команд
 
-Python: pytest, pytest-cov, Ruff, type checker (mypy или Pyright), Import Linter. React: Vitest + Testing Library, ESLint/formatter, TypeScript typecheck. E2E: Playwright (настоящие браузеры, real-time, mobile viewport), внешний AI только через fake adapter в CI.
+Python: pytest, pytest-cov, Ruff, mypy, Import Linter. React: Vitest + Testing Library, ESLint/Prettier, TypeScript typecheck. E2E: Playwright (настоящие браузеры, real-time, mobile viewport), внешний AI только через fake adapter в CI — ещё не реализован.
 
-Целевые **публичные команды проекта, подлежащие реализации в skeleton**, а **не существующие сейчас**:
+Публичный интерфейс — корневой `Makefile`. Он запускает команды через `mise exec -- ...`, поэтому работает и без `mise activate`; GNU make, Linux.
 
-```bash
-make lint                  # быстрые статические проверки
-make test-unit             # все быстрые unit-тесты + архитектура
-make test-affected         # выбранные tests по scope задачи (аргументы/конфиг определятся при реализации)
-make test-integration      # API, SQLAlchemy, WebSocket, migrations
-make test-e2e-smoke        # ключевые Playwright сценарии
-make test-e2e-full         # расширенная регрессия
-make test-ci               # полный gate публикации (до push в main; тот же набор в CI)
-```
+| Цель | Состав |
+| --- | --- |
+| `make setup` | `mise install`; в `backend/` — `uv sync`; в `frontend/` — `npm ci`. |
+| `make lint` | backend: `ruff check .`, `ruff format --check .`, `mypy`; frontend: `npm run lint`, `npm run format:check`, `npm run typecheck`. |
+| `make test-unit` | backend: `pytest -m unit`, `lint-imports`; frontend: `npm run test` (Vitest run). |
+| `make test-integration` | backend: `pytest -m integration`. |
+| `make test-affected SCOPE=<backend\|frontend\|all> ARGS='<селекторы>'` | нативные селекторы тестов; см. ниже. |
+| `make dev` | backend + frontend одной командой, LAN-listener по умолчанию. |
+| `make hooks` | установка git hooks копированием из `scripts/hooks/`. |
 
-До появления `Makefile` нельзя утверждать, что такие команды работоспособны. Bootstrap Task должна определить реальные селекторы тестов, запуск серверов/тестовой БД, изоляцию портов и окружения, записать их здесь и проверить работу hooks. Нельзя придумывать `--changed` или custom dynamic test selector без реализации.
+`make test-affected` не вводит `--changed` и не реализует собственный dynamic selector; он честно передаёт нативные аргументы:
+
+- `SCOPE=backend` → из `backend/`: `uv run pytest <ARGS>` — пути, `-k`, `-m`;
+- `SCOPE=frontend` → из `frontend/`: `npm run test -- <ARGS>` — паттерны файлов Vitest;
+- `SCOPE=all` (по умолчанию) → те же `<ARGS>` последовательно в обоих стеках.
+
+Пустой `ARGS` или неизвестный `SCOPE` — usage-ошибка с ненулевым exit. `ARGS` со сложным shell-quoting передавать в одинарных кавычках.
+
+Изоляция: backend unit/integration выполняются в процессе pytest на SQLite в памяти (`sqlite+pysqlite:///:memory:`, per-process) с настоящим Alembic pipeline для integration; `TestClient` работает без сетевых портов; файл рабочей БД не создаётся. Frontend — jsdom/Vitest без браузера. На тест-целях `RUN=<id>` задаёт отдельный pytest cache (`-o cache_dir=.pytest_cache/run-<id>` внутри игнорируемого `.pytest_cache/`), чтобы параллельные прогоны не конфликтовали по артефактам; frontend-прогоны общих тестовых артефактов не пишут.
+
+Git hooks устанавливаются `make hooks` в `$(git rev-parse --git-path hooks)` копированием (не symlink):
+
+- `pre-commit` — только staged-файлы (`.py` в `backend/`: `ruff check` + `ruff format --check`; `.ts/.tsx/.js/.jsx` в `frontend/`: `eslint` + `prettier --check`); без E2E, без релевантных файлов — быстрый exit 0;
+- `pre-push` — backend `pytest -m unit` + `lint-imports`, frontend `npm run test`; без браузеров.
+
+`make test-e2e-smoke`, `make test-e2e-full` и `make test-ci` **ещё не существуют** — их создаёт задача 68c.4. CI-файл GitHub Actions создаёт задача 68c.5. До этого полный gate публикации с E2E smoke desktop+mobile не обеспечен Makefile, и это нельзя заявлять как выполненное.
 
 ## Риски, требующие дополнительных проверок
 

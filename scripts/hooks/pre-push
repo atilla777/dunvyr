@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Dunvyr pre-push: быстрые unit-тесты и архитектурные контракты, без браузеров.
+# Устанавливается через `make hooks` (копированием, не symlink).
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [[ ! -x backend/.venv/bin/python ]]; then
+  printf 'pre-push: не найден backend/.venv; выполни make setup.\n' >&2
+  exit 1
+fi
+if [[ ! -d frontend/node_modules ]]; then
+  printf 'pre-push: не найден frontend/node_modules; выполни make setup.\n' >&2
+  exit 1
+fi
+
+printf 'pre-push: backend unit-тесты и архитектурные контракты...\n'
+if ! (cd backend && mise exec -- uv run pytest -m unit); then
+  printf 'pre-push: backend unit-тесты не прошли; push отклонён.\n' >&2
+  exit 1
+fi
+if ! (cd backend && mise exec -- uv run lint-imports); then
+  printf 'pre-push: архитектурные контракты нарушены; push отклонён.\n' >&2
+  exit 1
+fi
+
+printf 'pre-push: frontend unit-тесты...\n'
+if ! (cd frontend && mise exec -- npm run test); then
+  printf 'pre-push: frontend unit-тесты не прошли; push отклонён.\n' >&2
+  exit 1
+fi
+
+printf 'pre-push: проверки пройдены.\n'
+exit 0

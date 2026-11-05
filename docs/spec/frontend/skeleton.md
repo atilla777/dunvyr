@@ -13,7 +13,7 @@
   - `npm run typecheck` — `tsc --noEmit` (strict, `noUnusedLocals`/`noUnusedParameters`/`verbatimModuleSyntax`);
   - `npm run test` — `vitest run`;
   - `npm run build` — `tsc --noEmit && vite build` (production-сборка; `dist/` игнорируется Git).
-- `make`-обёрток пока нет — это задача dunvyr-68c.3; состав будущего gate — в [testing](../../rules/testing.md).
+- Публичный командный интерфейс — корневой `Makefile` (включая `make test-unit` с `npm run test`) — см. [tooling/commands](../tooling/commands.md); состав gate — в [testing](../../rules/testing.md).
 
 ## Минимальная страница
 
@@ -23,7 +23,7 @@
 ## Dev-сервер и LAN
 
 - `npm run dev` поднимает Vite dev-сервер на `localhost` по умолчанию.
-- LAN-биндинг — явный opt-in: переменная окружения `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) в `vite.config.ts` задаёт `server.host`; по умолчанию не `0.0.0.0` (правило LAN: открытие listener — только после осознанной настройки firewall и allowed origins). Итоговый LAN-запуск одной командой — задача dunvyr-68c.3.
+- LAN-биндинг — явный opt-in: переменная окружения `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) в `vite.config.ts` задаёт `server.host`; по умолчанию не `0.0.0.0` (правило LAN: открытие listener — только после осознанной настройки firewall и allowed origins). LAN-запуск обоих серверов одной командой — `make dev` (слушает `0.0.0.0` по умолчанию) — см. [tooling/commands](../tooling/commands.md).
 - Проверено на снимке задачи: dev-сервер отдаёт `GET /` → 200 (HTML с root-контейнером и module-скриптом) и `GET /src/main.tsx` → 200 (Vite-трансформированный модуль с React-mount).
 
 ## Тестовая архитектура
@@ -33,6 +33,6 @@
 
 ## Ограничения (ещё не существует)
 
-`Makefile`/`make`-цели и git hooks (dunvyr-68c.3), Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). Игровые UI-компоненты, WebSocket, роутинг, продуктовая стилевая тема — будущие вехи. Автоматизированная браузерная проверка страницы появится с задачей E2E; открытие страницы в реальном браузере — ручной шаг из README.
+Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5); командный интерфейс и git hooks — уже [tooling/commands.md](../tooling/commands.md). Игровые UI-компоненты, WebSocket, роутинг, продуктовая стилевая тема — будущие вехи. Автоматизированная браузерная проверка страницы появится с задачей E2E; открытие страницы в реальном браузере — ручной шаг из README.
 
 Известные ограничения зависимостей (отложены по review задачи dunvyr-68c.2, L1/L2): `npm audit` на lock фиксирует 7 moderate уязвимостей (minimatch через `@typescript-eslint/typescript-estree`, только dev-toolchain, runtime-зависимости не затронуты); безопасного фикса без даунгрейда typescript-eslint нет — пере-аудит при следующем обновлении зависимостей. ESLint 9.x (EOL-линия) — осознанный выбор этой вехи; переход на ESLint 10.x возможен без даунгрейда typescript-eslint, кандидат на ближайшую подходящую задачу.

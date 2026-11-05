@@ -11,7 +11,7 @@
   - `uv run mypy` (strict на `src/dunvyr`);
   - `uv run pytest -m unit`, `uv run pytest -m integration`, `uv run pytest`;
   - `uv run lint-imports` (архитектурные контракты).
-- Реальные селекторы тестов — зарегистрированные маркеры pytest `unit` / `integration` (`--strict-markers`). `make`-обёрток пока нет — это задача dunvyr-68c.3; состав будущего gate — в [testing](../../rules/testing.md).
+- Реальные селекторы тестов — зарегистрированные маркеры pytest `unit` / `integration` (`--strict-markers`). Публичный командный интерфейс — корневой `Makefile` (`make lint`, `make test-unit`, `make test-integration`, `make test-affected` с этими же командами) — см. [tooling/commands](../tooling/commands.md); состав gate — в [testing](../../rules/testing.md).
 
 ## App-factory и health-эндпоинт
 
@@ -41,4 +41,4 @@
 
 ## Ограничения (ещё не существует)
 
-Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md). `Makefile`/`make`-цели и git hooks (dunvyr-68c.3), Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс и git hooks — [tooling/commands.md](../tooling/commands.md). Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

@@ -7,6 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from dunvyr import __version__
 from dunvyr.campaigns.application.rate_limit import (
@@ -14,7 +15,15 @@ from dunvyr.campaigns.application.rate_limit import (
     CampaignSlidingWindowRateLimiter,
 )
 from dunvyr.campaigns.infrastructure.factory import build_campaign_service
+from dunvyr.campaigns.infrastructure.membership import build_campaign_membership_reader
 from dunvyr.campaigns.presentation.router import router as campaigns_router
+from dunvyr.communication.application.service import ChatService
+from dunvyr.communication.infrastructure.campaign_events import (
+    build_campaign_member_joined_publisher,
+)
+from dunvyr.communication.infrastructure.factory import build_chat_service
+from dunvyr.communication.infrastructure.realtime import RealtimeHub
+from dunvyr.communication.presentation.router import router as communication_router
 from dunvyr.identity.application.rate_limit import RateLimitPolicy, SlidingWindowRateLimiter
 from dunvyr.identity.infrastructure.clock import utc_now
 from dunvyr.identity.infrastructure.factory import build_identity_service
@@ -66,7 +75,23 @@ def create_app(
     )
     app.state.identity_service_factory = build_identity_service
     app.state.guest_resolver_factory = build_identity_service
+    app.state.campaign_membership_reader_factory = build_campaign_membership_reader
+
+    realtime_hub = RealtimeHub()
+    app.state.realtime_hub = realtime_hub
+
+    def chat_service_factory(session: Session) -> ChatService:
+        return build_chat_service(
+            session,
+            membership_reader=build_campaign_membership_reader(session),
+        )
+
+    app.state.chat_service_factory = chat_service_factory
     app.state.campaign_service_factory = build_campaign_service
+    app.state.campaign_event_publisher = build_campaign_member_joined_publisher(
+        app.state.session_factory,
+        realtime_hub,
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -79,4 +104,5 @@ def create_app(
     app.include_router(health_router)
     app.include_router(identity_router)
     app.include_router(campaigns_router)
+    app.include_router(communication_router)
     return app

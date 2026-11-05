@@ -10,13 +10,18 @@ from dunvyr.campaigns.application.service import CampaignService
 from dunvyr.campaigns.infrastructure.clock import utc_now
 from dunvyr.campaigns.infrastructure.repositories import SqlAlchemyUnitOfWork
 from dunvyr.campaigns.infrastructure.tokens import SecretsInvitationSecretGenerator
+from dunvyr.campaigns.public import CampaignEventPublisher
 
 
-def build_campaign_service(session: Session) -> CampaignService:
+def build_campaign_service(
+    session: Session,
+    event_publisher: CampaignEventPublisher | None = None,
+) -> CampaignService:
     """Wire concrete adapters into the application service (one per request)."""
     return CampaignService(
         unit_of_work=SqlAlchemyUnitOfWork(session),
         invitation_secret_generator=SecretsInvitationSecretGenerator(),
         clock=utc_now,
         id_factory=uuid4,
+        event_publisher=event_publisher,
     )

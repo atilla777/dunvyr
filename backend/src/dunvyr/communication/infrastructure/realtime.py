@@ -1,0 +1,65 @@
+"""In-process realtime fan-out hub (no Redis/queues in the MVP)."""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+from dataclasses import dataclass
+from uuid import UUID
+
+
+@dataclass(slots=True)
+class _Subscriber:
+    loop: asyncio.AbstractEventLoop
+    queue: asyncio.Queue[dict[str, object]]
+
+
+def _enqueue(queue: asyncio.Queue[dict[str, object]], payload: dict[str, object]) -> None:
+    queue.put_nowait(payload)
+
+
+class RealtimeHub:
+    """Thread-safe registry of per-campaign WebSocket subscriber queues."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._subscribers: dict[UUID, dict[int, _Subscriber]] = {}
+        self._next_token = 0
+
+    def subscribe(self, campaign_id: UUID) -> tuple[int, asyncio.Queue[dict[str, object]]]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        with self._lock:
+            token = self._next_token
+            self._next_token += 1
+            self._subscribers.setdefault(campaign_id, {})[token] = _Subscriber(
+                loop=loop, queue=queue
+            )
+        return token, queue
+
+    def unsubscribe(self, campaign_id: UUID, token: int) -> None:
+        with self._lock:
+            subscribers = self._subscribers.get(campaign_id)
+            if subscribers is None:
+                return
+            subscribers.pop(token, None)
+            if not subscribers:
+                self._subscribers.pop(campaign_id, None)
+
+    def broadcast(self, campaign_id: UUID, payload: dict[str, object]) -> None:
+        """Enqueue one payload for every currently connected campaign client."""
+        with self._lock:
+            subscribers = tuple(self._subscribers.get(campaign_id, {}).values())
+        for subscriber in subscribers:
+            try:
+                subscriber.loop.call_soon_threadsafe(_enqueue, subscriber.queue, payload)
+            except RuntimeError:
+                # The subscriber loop is already closed; its handler will clean up.
+                continue
+
+    def subscriber_count(self, campaign_id: UUID) -> int:
+        with self._lock:
+            return len(self._subscribers.get(campaign_id, {}))
+
+
+__all__ = ["RealtimeHub"]

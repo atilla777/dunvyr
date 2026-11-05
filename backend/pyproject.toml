@@ -13,6 +13,7 @@ dependencies = [
     "fastapi",
     "sqlalchemy>=2.0,<3.0",
     "uvicorn",
+    "websockets>=17.4",
 ]
 
 [dependency-groups]
@@ -224,4 +225,45 @@ forbidden_modules = [
     "dunvyr.campaigns.infrastructure",
     "dunvyr.campaigns.presentation",
     "dunvyr.campaigns.public",
+]
+
+[[tool.importlinter.contracts]]
+name = "Communication layering: presentation > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.communication.presentation",
+    "dunvyr.communication.application",
+    "dunvyr.communication.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Communication layering: infrastructure > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.communication.infrastructure",
+    "dunvyr.communication.application",
+    "dunvyr.communication.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Communication public contract imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.communication.public"]
+forbidden_modules = [
+    "dunvyr.communication.application",
+    "dunvyr.communication.infrastructure",
+    "dunvyr.communication.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Communication domain imports no outer layers"
+type = "forbidden"
+source_modules = ["dunvyr.communication.domain"]
+forbidden_modules = [
+    "dunvyr.communication.application",
+    "dunvyr.communication.infrastructure",
+    "dunvyr.communication.presentation",
+    "dunvyr.communication.public",
+    "dunvyr.campaigns",
+    "dunvyr.identity",
 ]

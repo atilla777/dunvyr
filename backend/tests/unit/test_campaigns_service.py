@@ -23,6 +23,7 @@ from dunvyr.campaigns.domain.invitation import Invitation, hash_invitation_secre
 from dunvyr.campaigns.domain.max_seats import InvalidMaxSeats, MaxSeats
 from dunvyr.campaigns.domain.membership import MemberRole, Membership
 from dunvyr.campaigns.domain.name import CampaignName, InvalidCampaignName
+from dunvyr.campaigns.public import CampaignMemberSnapshot
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 ORGANIZER_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -141,10 +142,22 @@ class FixedInvitationSecretGenerator:
         return self.secret
 
 
+class RecordingEventPublisher:
+    def __init__(self, uow: FakeUnitOfWork) -> None:
+        self.uow = uow
+        self.published: list[tuple[UUID, CampaignMemberSnapshot]] = []
+        self.commits_at_publish: list[int] = []
+
+    def member_joined(self, campaign_id: UUID, member: CampaignMemberSnapshot) -> None:
+        self.commits_at_publish.append(self.uow.commits)
+        self.published.append((campaign_id, member))
+
+
 def build_service(
     *,
     uow: FakeUnitOfWork | None = None,
     secret: str = RAW_SECRET,
+    publisher: RecordingEventPublisher | None = None,
 ) -> tuple[CampaignService, FakeUnitOfWork, FixedInvitationSecretGenerator]:
     resolved_uow = uow or FakeUnitOfWork()
     generator = FixedInvitationSecretGenerator(secret)
@@ -153,6 +166,7 @@ def build_service(
         invitation_secret_generator=generator,
         clock=FixedClock(NOW),
         id_factory=FixedIdFactory(CAMPAIGN_ID),
+        event_publisher=publisher,
     )
     return service, resolved_uow, generator
 
@@ -505,3 +519,35 @@ def test_revoke_invitation_is_not_found_for_a_missing_campaign() -> None:
 
     with pytest.raises(CampaignNotFound):
         service.revoke_invitation(CAMPAIGN_ID, ORGANIZER_ID)
+
+
+@pytest.mark.unit
+def test_join_publishes_member_joined_only_after_the_commit() -> None:
+    uow = FakeUnitOfWork()
+    publisher = RecordingEventPublisher(uow)
+    service, _uow, _generator = build_service(uow=uow, publisher=publisher)
+    service.create_campaign(command(max_seats=4))
+
+    service.join_campaign(join_command())
+
+    assert publisher.commits_at_publish == [2]
+    assert len(publisher.published) == 1
+    campaign_id, member = publisher.published[0]
+    assert campaign_id == CAMPAIGN_ID
+    assert member.guest_id == OTHER_GUEST_ID
+    assert member.nickname == "Боб"
+    assert member.role == "player"
+
+
+@pytest.mark.unit
+def test_join_replay_does_not_publish_member_joined_again() -> None:
+    uow = FakeUnitOfWork()
+    publisher = RecordingEventPublisher(uow)
+    service, _uow, _generator = build_service(uow=uow, publisher=publisher)
+    service.create_campaign(command(max_seats=4))
+    service.join_campaign(join_command())
+
+    replay = service.join_campaign(join_command())
+
+    assert not replay.joined
+    assert len(publisher.published) == 1

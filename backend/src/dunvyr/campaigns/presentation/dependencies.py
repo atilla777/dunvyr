@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from dunvyr.campaigns.application.service import CampaignService
+from dunvyr.campaigns.public import CampaignEventPublisher
 from dunvyr.identity.public import SESSION_COOKIE_NAME, GuestResolver, GuestSnapshot
 from dunvyr.infrastructure.db import get_session
 
@@ -17,8 +18,9 @@ def get_campaign_service(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> CampaignService:
-    factory: Callable[[Session], CampaignService] = request.app.state.campaign_service_factory
-    return factory(session)
+    factory: Callable[..., CampaignService] = request.app.state.campaign_service_factory
+    publisher: CampaignEventPublisher = request.app.state.campaign_event_publisher
+    return factory(session, event_publisher=publisher)
 
 
 def get_current_guest(

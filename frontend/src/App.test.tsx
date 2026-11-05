@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { rememberLastCampaign } from './lastCampaign';
@@ -43,6 +43,11 @@ function jsonResponse(body: unknown, status = 200): Response {
     json: async () => body,
   } as unknown as Response;
 }
+
+beforeEach(() => {
+  // Campaign screens mount ChatPanel; jsdom has no usable WebSocket.
+  vi.stubGlobal('WebSocket', undefined);
+});
 
 afterEach(() => {
   cleanup();

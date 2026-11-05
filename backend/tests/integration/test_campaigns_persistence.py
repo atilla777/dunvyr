@@ -34,8 +34,8 @@ def test_campaign_survives_a_server_restart_and_never_repeats_the_secret(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
             tables = set(inspect(connection).get_table_names())
-        assert version == "0004"
-        assert {"campaigns_campaigns", "campaigns_members"} <= tables
+        assert version == "0005"
+        assert {"campaigns_campaigns", "campaigns_members", "communication_events"} <= tables
 
         with TestClient(first_app) as client:
             login = client.post(

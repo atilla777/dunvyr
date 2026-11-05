@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Campaign } from './api';
 import { CampaignScreen } from './CampaignScreen';
+import type { ChatTransportHandlers, ChatTransportFactory } from './chatSocket';
 
 const CURRENT_GUEST_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -35,6 +36,23 @@ function stubClipboard(writeText: (text: string) => Promise<void>) {
     configurable: true,
   });
 }
+
+beforeEach(() => {
+  // ChatPanel always asks for an empty history first; individual tests may
+  // override fetch with their own scenario.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse({
+        campaign_id: campaign.id,
+        events: [],
+        last_sequence: 0,
+      }),
+    ),
+  );
+  // jsdom has no real WebSocket; the panel shows the honest offline state.
+  vi.stubGlobal('WebSocket', undefined);
+});
 
 afterEach(() => {
   cleanup();
@@ -123,10 +141,12 @@ describe('CampaignScreen', () => {
     expect(await screen.findByText('Ссылка отозвана')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Отозвать ссылку' })).not.toBeInTheDocument();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`/api/campaigns/${campaign.id}/invitation/revoke`);
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('same-origin');
+    const revokeCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/invitation/revoke'),
+    ) as [string, RequestInit];
+    expect(revokeCall[0]).toBe(`/api/campaigns/${campaign.id}/invitation/revoke`);
+    expect(revokeCall[1].method).toBe('POST');
+    expect(revokeCall[1].credentials).toBe('same-origin');
   });
 
   it('reports a failed revoke and keeps the link active', async () => {
@@ -140,6 +160,54 @@ describe('CampaignScreen', () => {
     );
     expect(screen.getByRole('link')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Отозвать ссылку' })).toBeEnabled();
+  });
+
+  it('updates the live roster when a member_joined event arrives', async () => {
+    let handlers: ChatTransportHandlers | null = null;
+    const transportFactory: ChatTransportFactory = (_campaignId, nextHandlers) => {
+      handlers = nextHandlers;
+      nextHandlers.onStatus('open');
+      return { sendMessage: () => true, close: () => undefined };
+    };
+    render(
+      <CampaignScreen
+        campaign={campaign}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={transportFactory}
+      />,
+    );
+
+    await waitFor(() => expect(handlers).not.toBeNull());
+    act(() => {
+      handlers?.onEvent({
+        type: 'member_joined',
+        event_id: 'event-3',
+        campaign_id: campaign.id,
+        sequence: 3,
+        occurred_at: '2026-01-01T12:10:00+00:00',
+        member: {
+          guest_id: '44444444-4444-4444-8444-444444444444',
+          nickname: 'Кэрол',
+          role: 'player',
+          joined_at: '2026-01-01T12:10:00+00:00',
+        },
+      });
+    });
+
+    expect(await screen.findByText('Кэрол')).toBeInTheDocument();
+    expect(screen.getByText('Мест занято: 3 из 6')).toBeInTheDocument();
+    expect(await screen.findByText('Кэрол присоединился к кампании')).toBeInTheDocument();
+  });
+
+  it('places the chat before invitation and roster panels for mobile priority', () => {
+    render(<CampaignScreen campaign={campaign} currentGuestId={CURRENT_GUEST_ID} />);
+
+    const chatTitle = screen.getByRole('heading', { level: 3, name: 'Чат' });
+    const membersTitle = screen.getByRole('heading', { level: 3, name: 'Участники' });
+    expect(
+      chatTitle.compareDocumentPosition(membersTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Сообщение')).toBeInTheDocument();
   });
 
   it('hides the invitation section from a player who is not the organizer', () => {

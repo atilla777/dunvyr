@@ -1,3 +1,5 @@
+import type { ChatHistory } from './chat';
+
 export interface Guest {
   id: string;
   nickname: string;
@@ -48,6 +50,8 @@ const NICKNAME_TAKEN = 'Этот псевдоним уже занят в кам�
 const JOIN_INVALID = 'Не удалось присоединиться к кампании. Проверьте ссылку.';
 const JOIN_RATE_LIMIT = 'Слишком много попыток присоединиться. Попробуйте позже.';
 const REVOKE_RATE_LIMIT = 'Слишком много попыток. Попробуйте позже.';
+const CHAT_FORBIDDEN = 'Нет доступа к чату этой кампании.';
+const CHAT_UNAVAILABLE = 'Не удалось загрузить историю чата. Попробуйте обновить страницу.';
 
 export class ApiError extends Error {
   readonly status?: number;
@@ -242,6 +246,25 @@ export async function joinCampaign(secret: string): Promise<Campaign> {
     throw new ApiError(await readErrorDetail(response));
   }
   return (await response.json()) as Campaign;
+}
+
+export async function fetchChatHistory(campaignId: string): Promise<ChatHistory> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/chat/events`, {
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new ApiError(CHAT_UNAVAILABLE);
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(CHAT_FORBIDDEN, response.status);
+  }
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as ChatHistory;
 }
 
 export async function revokeInvitation(campaignId: string): Promise<Campaign> {

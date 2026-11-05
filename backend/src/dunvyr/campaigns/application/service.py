@@ -1,7 +1,8 @@
-"""Skeleton campaigns application service for the TDD red step."""
+"""Campaigns application service: campaigns, invitations and membership."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -31,8 +32,11 @@ from dunvyr.campaigns.domain.campaign import (
 )
 from dunvyr.campaigns.domain.invitation import Invitation, hash_invitation_secret
 from dunvyr.campaigns.domain.max_seats import MaxSeats
-from dunvyr.campaigns.domain.membership import MemberRole
+from dunvyr.campaigns.domain.membership import MemberRole, Membership
 from dunvyr.campaigns.domain.name import CampaignName
+from dunvyr.campaigns.public import CampaignEventPublisher, CampaignMemberSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,11 +117,13 @@ class CampaignService:
         invitation_secret_generator: InvitationSecretGenerator,
         clock: Clock,
         id_factory: IdFactory,
+        event_publisher: CampaignEventPublisher | None = None,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._invitation_secret_generator = invitation_secret_generator
         self._clock = clock
         self._id_factory = id_factory
+        self._event_publisher = event_publisher
 
     def create_campaign(self, command: CreateCampaign) -> IssuedCampaign:
         existing = self._unit_of_work.campaigns.find_by_organizer_and_idempotency_key(
@@ -204,6 +210,7 @@ class CampaignService:
                     raise InvitationUnavailable
                 raise NoFreeSeats
             self._unit_of_work.commit()
+            self._publish_member_joined(joined.id, membership)
         except MembershipInsertConflict:
             # A concurrent row made the member insert fail: either this guest
             # already joined (replay) or another member owns the nickname.
@@ -216,6 +223,29 @@ class CampaignService:
                 raise NicknameTaken from None
             raise
         return JoinedCampaign(campaign=_view(joined), joined=True)
+
+    def _publish_member_joined(self, campaign_id: UUID, membership: Membership) -> None:
+        """Notify other contexts only after the join transaction committed.
+
+        A delivery failure must never turn a committed join into an error
+        response or roll it back; clients can recover the roster from HTTP.
+        """
+        if self._event_publisher is None:
+            return
+        snapshot = CampaignMemberSnapshot(
+            guest_id=membership.guest_id,
+            nickname=membership.nickname,
+            role=membership.role.value,
+            joined_at=membership.joined_at,
+        )
+        try:
+            self._event_publisher.member_joined(campaign_id, snapshot)
+        except Exception:
+            logger.warning(
+                "Failed to publish member_joined for campaign %s",
+                campaign_id,
+                exc_info=True,
+            )
 
     def revoke_invitation(self, campaign_id: UUID, actor_id: UUID) -> CampaignView:
         """Revoke the campaign invitation; only its organizer may do so."""

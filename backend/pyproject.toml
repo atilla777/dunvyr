@@ -117,3 +117,42 @@ layers = [
     "dunvyr.presentation",
     "dunvyr.infrastructure",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Identity layering: presentation > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.identity.presentation",
+    "dunvyr.identity.application",
+    "dunvyr.identity.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Identity layering: infrastructure > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.identity.infrastructure",
+    "dunvyr.identity.application",
+    "dunvyr.identity.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Identity public contract imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.identity.public"]
+forbidden_modules = [
+    "dunvyr.identity.application",
+    "dunvyr.identity.infrastructure",
+    "dunvyr.identity.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Identity domain imports no outer layers"
+type = "forbidden"
+source_modules = ["dunvyr.identity.domain"]
+forbidden_modules = [
+    "dunvyr.identity.application",
+    "dunvyr.identity.infrastructure",
+    "dunvyr.identity.presentation",
+    "dunvyr.identity.public",
+]

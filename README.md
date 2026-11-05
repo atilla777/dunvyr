@@ -51,7 +51,35 @@ mise exec -- uv run lint-imports
 
 Если mise активирован в shell (`mise activate`), префикс `mise exec --` не нужен: достаточно `uv sync` и `uv run ...` из `backend/`. Проверить версию Python: `mise exec -- python --version` → `Python 3.14.10`.
 
-Integration-тесты применяют настоящий Alembic pipeline к SQLite в памяти (`sqlite+pysqlite:///:memory:`); файл рабочей БД при тестах не создаётся. Миграции вручную: `mise exec -- uv run alembic upgrade head` (URL — из `DUNVYR_DATABASE_URL`, по умолчанию `sqlite:///./dunvyr.db`).
+Integration-тесты применяют настоящий Alembic pipeline к SQLite в памяти (`sqlite+pysqlite:///:memory:`); файл рабочей БД при тестах не создаётся. В рабочем режиме `make dev` включает `DUNVYR_AUTO_MIGRATE=1`: при старте backend применяет `alembic upgrade head` к `backend/dunvyr.db`, поэтому файл и схема создаются миграциями (не `create_all`), а гостевые сессии переживают рестарт сервера. Миграции вручную: `mise exec -- uv run alembic upgrade head` (URL — из `DUNVYR_DATABASE_URL`, по умолчанию `sqlite:///./dunvyr.db`). Миграция `0002` создаёт таблицы `identity_guests` и `identity_sessions`; префикс `identity_` означает владение контекста identity.
+
+## Гостевой вход (identity)
+
+Гость вводит псевдоним, сервер создаёт идентичность и opaque-сессию. REST-контракт:
+
+- `POST /api/identity/sessions` с телом `{"nickname": "Алиса"}` → `201`, JSON `{"id": "<uuid>", "nickname": "Алиса"}` и cookie `dunvyr_session` (HttpOnly, SameSite=Lax, Path=/, срок 30 дней). Невалидный псевдоним → `422` с понятной ошибкой; слишком частые создания → `429` с `Retry-After`.
+- `GET /api/identity/me` → `200` с текущим гостем при действующей сессии, иначе `401`. Истёкшая сессия обрабатывается как отсутствующая.
+- Сессионный токен (256 бит, `secrets.token_urlsafe(32)`) никогда не возвращается в теле, URL или логах; в SQLite хранится только его SHA-256-хэш. Псевдоним обрезается по краям, содержит 1–32 Unicode-символа без управляющих символов; уникальность имён не требуется — идентичность определяется сессией.
+- Любой state-changing запрос (`POST`) обязан прислать заголовок `Origin` из allow-list, иначе `403`. Браузер в dev работает same-origin через Vite-прокси `/api`; non-browser клиент (curl, скрипт) должен передать допустимый `Origin` явно:
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/api/identity/sessions \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:5173' \
+  -d '{"nickname":"Алиса"}'
+```
+
+Переменные окружения backend/identity:
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `DUNVYR_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allow-list для CORS и проверки `Origin` на `POST`. |
+| `DUNVYR_COOKIE_SECURE` | выключено | `1` добавляет флаг `Secure` к cookie (включать за HTTPS). |
+| `DUNVYR_AUTO_MIGRATE` | выключено | `1` применяет Alembic-миграции при старте приложения. |
+| `DUNVYR_MIGRATIONS_DIR` | `migrations` (от cwd=backend) | Каталог Alembic-миграций для авто-миграции. |
+| `DUNVYR_BACKEND_ORIGIN` | `http://127.0.0.1:8000` | Target Vite-прокси `/api` (frontend dev). |
+
+`make dev` сам передаёт backend корректный `DUNVYR_ALLOWED_ORIGINS` (LAN-IP + loopback + localhost на порту frontend) и `DUNVYR_AUTO_MIGRATE=1`, а Vite — `DUNVYR_BACKEND_ORIGIN`.
 
 ## Frontend
 
@@ -68,7 +96,7 @@ mise exec -- npm run typecheck
 mise exec -- npm run test
 ```
 
-Запуск dev-сервера: `mise exec -- npm run dev` → http://localhost:5173 по умолчанию. Для доступа из LAN задайте `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) только после настройки firewall и allowed origins; `make dev` делает это для обоих серверов сразу (см. ниже).
+Запуск dev-сервера: `mise exec -- npm run dev` → http://localhost:5173 по умолчанию. Запросы приложения к `/api` проксируются Vite на `DUNVYR_BACKEND_ORIGIN` (по умолчанию `http://127.0.0.1:8000`), поэтому cookie и проверка `Origin` остаются same-origin с любого LAN-хоста. Для доступа из LAN задайте `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) только после настройки firewall и allowed origins; `make dev` делает это для обоих серверов сразу (см. ниже).
 
 Если mise активирован в shell, префикс `mise exec --` не нужен. Проверить версию Node: `mise exec -- node --version` → `v24.22.2`.
 
@@ -93,8 +121,8 @@ DUNVYR_BACKEND_PORT=9000 DUNVYR_FRONTEND_PORT=5174 make dev
 Ограничения и предупреждения:
 
 - Listener `0.0.0.0` открывает порты на всех интерфейсах. Firewall должен разрешать `8000`/`5173` только из доверенной LAN.
-- Обычный HTTP допустим только в доверенной LAN; для доступа из интернета обязателен HTTPS.
-- Backend пока не настраивает CORS/allowed origins. Когда frontend начнёт вызывать API с LAN-адресов, потребуется отдельная настройка; сейчас страница API не вызывает. Это известное будущее ограничение, а не реализованная защита.
+- Обычный HTTP допустим только в доверенной LAN; для доступа из интернета обязателен HTTPS. Cookie сессии использует `HttpOnly`/`SameSite=Lax`; `Secure` по умолчанию выключен для локального HTTP и включается `DUNVYR_COOKIE_SECURE=1` за HTTPS.
+- Backend проверяет `Origin` на state-changing запросах и настраивает CORS по allow-list `DUNVYR_ALLOWED_ORIGINS`; `make dev` подставляет LAN-IP, loopback и localhost на порту frontend. Другие источники должны быть добавлены явно.
 
 ## E2E smoke (Playwright)
 
@@ -102,8 +130,8 @@ Smoke-набор — `frontend/e2e/smoke.spec.ts`, конфигурация — 
 
 Playwright сам поднимает оба сервера (`webServer` в конфиге) и останавливает их после прогона:
 
-- backend — `uvicorn` с фабрикой `dunvyr.main:create_app` на `127.0.0.1` и SQLite в памяти (`DUNVYR_DATABASE_URL=sqlite+pysqlite:///:memory:`), поэтому файл `backend/dunvyr.db` не создаётся;
-- frontend — Vite dev-сервер с `DUNVYR_DEV_HOST=127.0.0.1` и `--strictPort`.
+- backend — `uvicorn` с фабрикой `dunvyr.main:create_app` на `127.0.0.1` и SQLite в памяти (`DUNVYR_DATABASE_URL=sqlite+pysqlite:///:memory:`), поэтому файл `backend/dunvyr.db` не создаётся; `DUNVYR_AUTO_MIGRATE=1` применяет Alembic-схему, `DUNVYR_ALLOWED_ORIGINS=http://127.0.0.1:<frontend_port>` разрешает API-запросы со страницы E2E;
+- frontend — Vite dev-сервер с `DUNVYR_DEV_HOST=127.0.0.1`, `DUNVYR_BACKEND_ORIGIN=http://127.0.0.1:<backend_port>` (прокси `/api`) и `--strictPort`.
 
 Серверы слушают только loopback: LAN-адрес для E2E не используется. `reuseExistingServer: false` — занятый порт считается явной ошибкой, а не поводом молча переиспользовать чужой сервер.
 

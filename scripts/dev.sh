@@ -77,6 +77,31 @@ if [[ "$show_lan" == true ]]; then
   fi
 fi
 
+# Browser origins allowed to call the backend directly. In normal dev the
+# browser talks to Vite and /api is proxied, so the Origin header is the
+# frontend origin of the page the user opened (LAN, loopback or localhost).
+allowed_origin_hosts=("127.0.0.1" "localhost")
+if [[ -n "$lan_ip" ]]; then
+  allowed_origin_hosts=("$lan_ip" "${allowed_origin_hosts[@]}")
+fi
+case "$dev_host" in
+  localhost | 127.0.0.1 | ::1 | 0.0.0.0 | ::) ;;
+  *)
+    if [[ "$dev_host" != "$lan_ip" ]]; then
+      allowed_origin_hosts=("$dev_host" "${allowed_origin_hosts[@]}")
+    fi
+    ;;
+esac
+allowed_origins=""
+for host in "${allowed_origin_hosts[@]}"; do
+  origin="http://$host:$frontend_port"
+  if [[ -z "$allowed_origins" ]]; then
+    allowed_origins="$origin"
+  else
+    allowed_origins="$allowed_origins,$origin"
+  fi
+done
+
 printf '\nDunvyr dev\n'
 printf '  Frontend: %s\n' "$frontend_local_url"
 printf '  Backend:  %s\n' "$backend_local_url"
@@ -94,8 +119,12 @@ else
   printf '  * Listener %s. Доступ из LAN не открыт.\n' "$dev_host"
 fi
 printf '  * Обычный HTTP допустим только в доверенной LAN; для доступа из интернета обязателен HTTPS.\n'
-printf '  * Backend пока не настраивает CORS/allowed origins: когда frontend начнёт вызывать API с LAN-адресов,\n'
-printf '    потребуется отдельная настройка. Сейчас страница API не вызывает.\n'
+printf '  * Cookie сессии: HttpOnly, SameSite=Lax; Secure выключен для локального HTTP.\n'
+printf '    За HTTPS включи DUNVYR_COOKIE_SECURE=1.\n'
+printf '  * Backend применяет Alembic-миграции к файлу backend/dunvyr.db при старте\n'
+printf '    (DUNVYR_AUTO_MIGRATE=1): база создаётся миграциями, а не create_all.\n'
+printf '  * Разрешённые Origin для API (DUNVYR_ALLOWED_ORIGINS): %s\n' "$allowed_origins"
+printf '    Браузер работает с API same-origin через Vite-прокси /api → %s.\n' "http://$display_host:$backend_port"
 printf '\nСерверы запущены. Ctrl+C остановит оба.\n\n'
 
 backend_pid=""
@@ -151,6 +180,8 @@ trap 'exit 143' TERM
 
 (
   cd "$backend_dir"
+  DUNVYR_ALLOWED_ORIGINS="$allowed_origins" \
+  DUNVYR_AUTO_MIGRATE=1 \
   exec setsid mise exec -- uv run uvicorn \
     --factory dunvyr.main:create_app \
     --host "$dev_host" \
@@ -160,7 +191,9 @@ backend_pid=$!
 
 (
   cd "$frontend_dir"
-  DUNVYR_DEV_HOST="$dev_host" exec setsid mise exec -- npm run dev -- --port "$frontend_port"
+  DUNVYR_DEV_HOST="$dev_host" \
+  DUNVYR_BACKEND_ORIGIN="http://$display_host:$backend_port" \
+  exec setsid mise exec -- npm run dev -- --port "$frontend_port"
 ) &
 frontend_pid=$!
 

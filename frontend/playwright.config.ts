@@ -47,6 +47,8 @@ export default defineConfig({
       cwd: '../backend',
       env: {
         DUNVYR_DATABASE_URL: 'sqlite+pysqlite:///:memory:',
+        DUNVYR_AUTO_MIGRATE: '1',
+        DUNVYR_ALLOWED_ORIGINS: `http://${LOOPBACK}:${frontendPort}`,
       },
       url: `http://${LOOPBACK}:${backendPort}/health`,
       reuseExistingServer: false,
@@ -59,6 +61,7 @@ export default defineConfig({
       cwd: '.',
       env: {
         DUNVYR_DEV_HOST: LOOPBACK,
+        DUNVYR_BACKEND_ORIGIN: `http://${LOOPBACK}:${backendPort}`,
       },
       url: `${frontendURL}/`,
       reuseExistingServer: false,

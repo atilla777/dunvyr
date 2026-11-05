@@ -6,6 +6,6 @@
 
 - [Backend-скелет: toolchain, app-factory, миграции, тестовая архитектура](backend/skeleton.md)
 - [Frontend-скелет: toolchain, минимальная страница, dev-сервер, проверки](frontend/skeleton.md)
-- [Командный интерфейс: Makefile, make dev, git hooks, E2E, изоляция прогонов](tooling/commands.md)
+- [Командный интерфейс: Makefile, make dev, git hooks, E2E, CI, изоляция прогонов](tooling/commands.md)
 
 Не выводить нормативные требования исключительно из случайно существующего кода. Официальные продуктовые намерения — в `docs/product/`, инженерные ограничения — в `docs/rules/`, конкретика задачи — в Beads.

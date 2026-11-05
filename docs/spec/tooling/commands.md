@@ -1,6 +1,6 @@
-# Командный интерфейс: Makefile, make dev, git hooks, E2E, изоляция прогонов
+# Командный интерфейс: Makefile, make dev, git hooks, E2E, CI, изоляция прогонов
 
-> Подтверждённое поведение, введённое Beads-задачами dunvyr-68c.3 и dunvyr-68c.4 (bootstrap-веха 1). Нормативные источники: [testing](../../rules/testing.md), [technology-and-infrastructure](../../rules/technology-and-infrastructure.md), [development-workflow](../../rules/development-workflow.md). Канонический fresh-clone flow — в корневом `README.md`.
+> Подтверждённое поведение, введённое Beads-задачами dunvyr-68c.3, dunvyr-68c.4 и dunvyr-68c.5 (bootstrap-веха 1). Нормативные источники: [testing](../../rules/testing.md), [technology-and-infrastructure](../../rules/technology-and-infrastructure.md), [development-workflow](../../rules/development-workflow.md). Канонический fresh-clone flow — в корневом `README.md`.
 
 ## Публичный интерфейс команд
 
@@ -35,6 +35,18 @@
 - `make test-e2e-full` — сейчас запускает тот же Playwright-набор, что smoke: осознанное совпадение при малом числе сценариев (нормативно: [testing](../../rules/testing.md)); расширяется с появлением расширенных E2E-сценариев.
 - `make test-ci` — полный локальный gate публикации: `test-unit` + `test-integration` + `test-e2e-smoke` (`test-unit` уже включает architecture `lint-imports` и frontend Vitest). Подтверждено: полный зелёный прогон (6 unit + 4 контракта + Vitest 1/1 + 5 integration + 2 E2E).
 
+## CI (GitHub Actions): пост-фактум подтверждение публикации
+
+Введено задачей dunvyr-68c.5. Норматив: [testing](../../rules/testing.md) («`main` после push — полный CI-набор»), [development-workflow](../../rules/development-workflow.md) (CI — пост-фактум подтверждение, не замена локального gate до push).
+
+- Workflow — `.github/workflows/ci.yml`, имя `CI`. Триггеры: push в `main` и ручной `workflow_dispatch` (Actions → CI → Run workflow — отладка и проверка стабильности без нового коммита). `permissions: contents: read`; секреты не используются, реальный AI не вызывается.
+- Runner `ubuntu-24.04` закреплён сознательно (воспроизводимость образа; Playwright официально поддерживает Ubuntu 24.04), `timeout-minutes: 30`. Actions закреплены мажорными тегами: `actions/checkout@v7`, `jdx/mise-action@v4`, `actions/cache@v4` — без плавающих `@main`.
+- Toolchain ставится из того же источника истины, что локально: `jdx/mise-action@v4` читает корневой `mise.toml` (Python, uv, Node), выполняет `mise install` и экспортирует PATH в последующие шаги; кэш mise-инструментов включён по умолчанию.
+- Один job `test-ci` нарочно: шаги `make setup` → системные библиотеки Chromium (`cd frontend && mise exec -- npx playwright install-deps chromium` — runner-специфика, локальные команды не меняются) → `make test-ci`. Запускаемый набор — буквально та же цель `make test-ci`, что и локальный gate (unit + architecture + Vitest + integration + E2E smoke), один общий снимок и порядок шагов.
+- Кэши `actions/cache@v4`: `~/.cache/uv` (ключ по `backend/uv.lock`), `~/.npm` и `~/.cache/ms-playwright` (ключи по `frontend/package-lock.json` — версия `@playwright/test` зафиксирована в lock); смена lock-файла автоматически сбрасывает кэш.
+- Изоляция на runner: E2E-серверы поднимает сам Playwright `webServer` на loopback (8100/5273) с in-memory SQLite (см. раздел E2E выше) — внешние env-переменные и порты runner не нужны; `reuseExistingServer: false`.
+- Контракт workflow подтверждён статически: `actionlint` 1.7.12 — exit 0, независимый YAML-парс — exit 0, referenced-цели `make setup`/`make test-ci` сверены с Makefile. Фактический прогон на GitHub происходит пост-фактум после публикации (природа CI); наблюдение — раздел Actions репозитория.
+
 ## Ограничения (ещё не существует)
 
-CI-файл GitHub Actions — задача dunvyr-68c.5: пост-фактум подтверждение в CI после push пока не обеспечено. CORS/allowed origins на backend — будущая настройка при появлении реальных API-вызовов с LAN-источников. mise-таски-делегаты сознательно не заведены (Makefile — единственный публичный интерфейс). Одновременный прогон `make dev` и E2E не проверялся — доказаны только раздельные порты и env-переопределение; mobile — эмуляция устройства в Chromium; Playwright предупреждает, что ОС не officially supported (использована fallback-сборка chromium Ubuntu 24.04).
+CORS/allowed origins на backend — будущая настройка при появлении реальных API-вызовов с LAN-источников. mise-таски-делегаты сознательно не заведены (Makefile — единственный публичный интерфейс). Одновременный прогон `make dev` и E2E не проверялся — доказаны только раздельные порты и env-переопределение; mobile — эмуляция устройства в Chromium; Playwright предупреждает, что ОС не officially supported (использована fallback-сборка chromium Ubuntu 24.04).

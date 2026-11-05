@@ -22,3 +22,8 @@ build/
 *.db-wal
 *.db-shm
 *.db-journal
+
+# Frontend (Node / Vite)
+node_modules/
+coverage/
+*.tsbuildinfo

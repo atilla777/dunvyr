@@ -35,6 +35,30 @@ mise exec -- uv run lint-imports
 
 Integration-тесты применяют настоящий Alembic pipeline к SQLite в памяти (`sqlite+pysqlite:///:memory:`); файл рабочей БД при тестах не создаётся. Миграции вручную: `mise exec -- uv run alembic upgrade head` (URL — из `DUNVYR_DATABASE_URL`, по умолчанию `sqlite:///./dunvyr.db`).
 
+## Frontend
+
+Версия Node и npm зафиксированы в корневом `mise.toml`; React, Vite, TypeScript, ESLint, Prettier, Vitest и Testing Library — dev-зависимости из `frontend/package.json`, точные версии — в `frontend/package-lock.json`.
+
+С чистого клона:
+
+```bash
+mise install                      # ставит Node 24.22.2 и остальные инструменты из mise.toml
+cd frontend
+mise exec -- npm ci               # воспроизводимая установка из package-lock.json
+mise exec -- npm run lint
+mise exec -- npm run format:check
+mise exec -- npm run typecheck
+mise exec -- npm run test
+```
+
+Запуск dev-сервера: `mise exec -- npm run dev` → http://localhost:5173 по умолчанию. Для доступа из LAN задайте `DUNVYR_DEV_HOST` (LAN-IP или `0.0.0.0`) только после настройки firewall и allowed origins:
+
+```bash
+DUNVYR_DEV_HOST=0.0.0.0 mise exec -- npm run dev
+```
+
+Если mise активирован в shell, префикс `mise exec --` не нужен. Проверить версию Node: `mise exec -- node --version` → `v24.22.2`.
+
 ## Среда агентной разработки (установлена)
 
 - **MIS** установлен из проверенного upstream https://github.com/atilla777/mis; точная ревизия зафиксирована в `.opencode/mis-installation` — проверяй этот файл, а не этот README.

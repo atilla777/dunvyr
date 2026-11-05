@@ -1,7 +1,9 @@
 # Project toolchain for Dunvyr.
-# Single source of truth for the Python version (owner decision 2026-11-05).
-# Tool versions of checks and linters live in backend/pyproject.toml + uv.lock.
+# Single source of truth for the Python and Node versions (owner decision 2026-11-05).
+# Tool versions of Python checks and linters live in backend/pyproject.toml + uv.lock.
+# Tool versions of frontend checks and linters live in frontend/package.json + package-lock.json.
 
 [tools]
 python = "3.14.10"
 uv = "0.13.7"
+node = "24.22.2"

@@ -41,4 +41,4 @@
 
 ## Ограничения (ещё не существует)
 
-Frontend (dunvyr-68c.2), `Makefile`/`make`-цели и git hooks (dunvyr-68c.3), Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md). `Makefile`/`make`-цели и git hooks (dunvyr-68c.3), Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

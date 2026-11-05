@@ -19,3 +19,6 @@ __pycache__/
 coverage.xml
 dist/
 build/
+*.db-wal
+*.db-shm
+*.db-journal

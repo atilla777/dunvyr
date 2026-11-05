@@ -28,11 +28,14 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/dunvyr"]
 
+[tool.uv]
+python-preference = "only-system"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
-    "unit: fast unit tests without I/O or a database",
+    "unit: fast isolated tests (no working database; in-memory or tmp-path engines only)",
     "integration: integration tests running the app against a migrated SQLite database",
 ]
 

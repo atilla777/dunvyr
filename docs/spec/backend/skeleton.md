@@ -4,7 +4,7 @@
 
 ## Toolchain и команды
 
-- Версии рантимов — единственный источник истины: корневой `mise.toml` (`python = "3.14.10"`, `uv = "0.13.7"`); файла `.python-version` нет. Инструменты проверок — dev-зависимости проекта: `backend/pyproject.toml` + `backend/uv.lock` (точные версии в lock).
+- Версии рантимов — единственный источник истины: корневой `mise.toml` (`python = "3.14.10"`, `uv = "0.13.7"`); файла `.python-version` нет. uv настроен с `python-preference = "only-system"` (`backend/pyproject.toml`), поэтому mise-пин Python авторитетен и uv не предпочтёт собственную managed-версию. Инструменты проверок — dev-зависимости проекта: `backend/pyproject.toml` + `backend/uv.lock` (точные версии в lock).
 - Свежий клон: `mise install` → из `backend/`: `uv sync` → проверки.
 - Реальные команды проверок (из `backend/`, все зелёные на снимке задачи):
   - `uv run ruff check .` и `uv run ruff format --check .` (lint/format, target py314);
@@ -17,7 +17,7 @@
 
 - Точка сборки — `dunvyr.main.create_app(*, engine=None, database_url=None)`: composition root, регистрирует роутеры, кладёт engine/session factory в `app.state`. Модульного экземпляра приложения нет; ASGI-запуск: `uvicorn --factory dunvyr.main:create_app`.
 - Контракт `GET /health` → `200` с телом `{"status": "ok", "database": "ok"}`; `database` проверяется реальным `SELECT 1` через сессию приложения, а не константой.
-- Разрешение URL БД (в порядке приоритета): явный аргумент → `database_url` → переменная окружения `DUNVYR_DATABASE_URL` → default `sqlite:///./dunvyr.db` (файл рабочей БД, игнорируется Git).
+- Разрешение URL БД (в порядке приоритета): явный аргумент → `database_url` → переменная окружения `DUNVYR_DATABASE_URL` → default `sqlite:///./dunvyr.db` (файл рабочей БД и его WAL/SHM-sidecar-файлы игнорируются Git).
 
 ## База данных и миграции
 
@@ -28,7 +28,7 @@
 ## Тестовая архитектура и изоляция
 
 - Тестовая SQLite — `sqlite+pysqlite:///:memory:` с `StaticPool`: один движок делят настоящий `alembic upgrade head` и приложение, поэтому миграции и запросы видят одну схему. Файлов рабочей БД тесты не создают и не меняют: интеграционный тест изоляции выполняет полный flow (миграции + TestClient `/health`) в `tmp_path` и утверждает отсутствие `*.db`/`*.db-wal` на диске.
-- Integration-тесты поднимают приложение через FastAPI `TestClient` на мигрированной in-memory SQLite; unit-тесты не касаются БД/файлов (единственное исключение — проверка WAL на временной файловой БД в `tmp_path`).
+- Integration-тесты поднимают приложение через FastAPI `TestClient` на мигрированной in-memory SQLite; unit-тесты не поднимают рабочую БД (два честных исключения — проверка pragma/подключения на in-memory-движке и проверка WAL на временной файловой БД в `tmp_path`).
 
 ## Архитектурные контракты (Import Linter)
 

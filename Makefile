@@ -20,17 +20,20 @@ SCOPE ?= all
 ARGS ?=
 HOOKS_DIR := $(shell git rev-parse --git-path hooks)
 
-.PHONY: help setup lint test-unit test-integration test-affected dev hooks
+.PHONY: help setup lint test-unit test-integration test-affected test-e2e-smoke test-e2e-full test-ci dev hooks
 
 help:
 	@printf '%s\n' \
 		'Dunvyr — локальные команды (запускать из корня репозитория).' \
 		'' \
-		'  make setup                     первичная установка: mise install, uv sync, npm ci' \
+		'  make setup                     первичная установка: mise install, uv sync, npm ci, chromium' \
 		'  make dev                       backend + frontend одной командой (LAN по умолчанию)' \
 		'  make lint                      статические проверки backend и frontend' \
 		'  make test-unit                 быстрые unit-тесты + архитектурные контракты' \
 		'  make test-integration          интеграционные тесты backend' \
+		'  make test-e2e-smoke            E2E smoke в Chromium: desktop + mobile' \
+		'  make test-e2e-full             расширенный E2E (сейчас совпадает со smoke)' \
+		'  make test-ci                   полный локальный gate: unit, integration, E2E smoke' \
 		'  make test-affected             выбранные нативные тесты (нужны SCOPE и ARGS)' \
 		'  make hooks                     установить git hooks (pre-commit, pre-push)' \
 		'' \
@@ -47,6 +50,7 @@ setup:
 	mise install
 	cd $(BACKEND) && $(MISE) uv sync
 	cd $(FRONTEND) && $(MISE) npm ci
+	cd $(FRONTEND) && $(MISE) npx playwright install chromium
 
 lint:
 	cd $(BACKEND) && $(MISE) uv run ruff check .
@@ -63,6 +67,19 @@ test-unit:
 
 test-integration:
 	cd $(BACKEND) && $(MISE) uv run pytest -m integration $(PYTEST_CACHE_ARGS)
+
+test-e2e-smoke:
+	cd $(FRONTEND) && $(MISE) npx playwright test
+
+# Сейчас full осознанно совпадает со smoke: расширенных E2E-сценариев ещё нет.
+# Когда они появятся, full перестанет быть синонимом smoke.
+test-e2e-full:
+	cd $(FRONTEND) && $(MISE) npx playwright test
+
+# Полный локальный gate публикации: test-unit уже включает architecture (lint-imports)
+# и frontend Vitest; E2E smoke идёт desktop + mobile.
+test-ci: test-unit test-integration test-e2e-smoke
+	@printf '%s\n' 'Полный локальный gate пройден: unit, integration, E2E smoke.'
 
 test-affected:
 	@if [ -z "$(strip $(ARGS))" ]; then \

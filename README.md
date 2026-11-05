@@ -2,7 +2,7 @@
 
 Dunvyr — локальная многопользовательская веб-платформа для совместных настольных RPG с AI Dungeon Master. Первый вертикальный продукт: короткое законченное киберпанк-приключение на 1–2 встречи; правила универсальны для разных сеттингов.
 
-**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. Корневой `Makefile` и git hooks уже созданы; Playwright/E2E и CI ещё не созданы — это следующие bootstrap-задачи.
+**Backend- и Frontend-скелеты приложения уже созданы**: `backend/` — FastAPI app-factory с health-эндпоинтом, SQLAlchemy 2.x + Alembic, pytest, Ruff, mypy и Import Linter; `frontend/` — Vite + React + TypeScript strict, ESLint/Prettier, Vitest + Testing Library и минимальная страница. Корневой `Makefile`, git hooks и Playwright E2E smoke (desktop + mobile) уже созданы; CI GitHub Actions ещё не создан — это следующая bootstrap-задача.
 
 ## Где читать
 
@@ -17,11 +17,14 @@ Dunvyr — локальная многопользовательская веб-
 Нужны Linux, GNU make и `mise` в PATH. Версии Python, `uv` и Node фиксирует корневой `mise.toml`; `mise activate` не обязателен, потому что все цели Makefile запускают команды через `mise exec -- ...`.
 
 ```bash
-make setup          # mise install + uv sync (backend) + npm ci (frontend)
+make setup          # mise install + uv sync (backend) + npm ci и Chromium (frontend)
 make dev            # backend на :8000 и frontend на :5173, LAN-listener по умолчанию
 make lint
 make test-unit
 make test-integration
+make test-e2e-smoke # E2E smoke: desktop + mobile (Playwright, Chromium)
+make test-e2e-full  # расширенный E2E (сейчас совпадает со smoke)
+make test-ci        # полный локальный gate: unit, integration, E2E smoke
 make test-affected SCOPE=backend ARGS='tests/unit/test_app.py'
 make test-affected SCOPE=frontend ARGS='src/App.test.tsx'
 make hooks          # установить pre-commit и pre-push в git hooks
@@ -58,6 +61,7 @@ Integration-тесты применяют настоящий Alembic pipeline к
 
 ```bash
 mise exec -- npm ci               # воспроизводимая установка из package-lock.json (make setup)
+mise exec -- npx playwright install chromium   # браузер для E2E (make setup)
 mise exec -- npm run lint
 mise exec -- npm run format:check
 mise exec -- npm run typecheck
@@ -91,6 +95,33 @@ DUNVYR_BACKEND_PORT=9000 DUNVYR_FRONTEND_PORT=5174 make dev
 - Listener `0.0.0.0` открывает порты на всех интерфейсах. Firewall должен разрешать `8000`/`5173` только из доверенной LAN.
 - Обычный HTTP допустим только в доверенной LAN; для доступа из интернета обязателен HTTPS.
 - Backend пока не настраивает CORS/allowed origins. Когда frontend начнёт вызывать API с LAN-адресов, потребуется отдельная настройка; сейчас страница API не вызывает. Это известное будущее ограничение, а не реализованная защита.
+
+## E2E smoke (Playwright)
+
+Smoke-набор — `frontend/e2e/smoke.spec.ts`, конфигурация — `frontend/playwright.config.ts`. Сценарий один и тот же для двух проектов: `smoke-desktop` (Chromium, viewport 1280×720) и `smoke-mobile` (Chromium, `devices['Pixel 5']`), настоящие браузеры в headless-режиме. Проверяется, что открывается главная страница (`h1` «Dunvyr») и что backend отвечает на `GET /health` статусом 200 и JSON с полем `status: "ok"`.
+
+Playwright сам поднимает оба сервера (`webServer` в конфиге) и останавливает их после прогона:
+
+- backend — `uvicorn` с фабрикой `dunvyr.main:create_app` на `127.0.0.1` и SQLite в памяти (`DUNVYR_DATABASE_URL=sqlite+pysqlite:///:memory:`), поэтому файл `backend/dunvyr.db` не создаётся;
+- frontend — Vite dev-сервер с `DUNVYR_DEV_HOST=127.0.0.1` и `--strictPort`.
+
+Серверы слушают только loopback: LAN-адрес для E2E не используется. `reuseExistingServer: false` — занятый порт считается явной ошибкой, а не поводом молча переиспользовать чужой сервер.
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `DUNVYR_E2E_BACKEND_PORT` | `8100` | Порт backend E2E (`GET /health`). |
+| `DUNVYR_E2E_FRONTEND_PORT` | `5273` | Порт Vite E2E и `baseURL` тестов. |
+
+Порты E2E отличаются от dev-портов `make dev` (`8000`/`5173`), поэтому параллельный `make dev` не мешает прогону:
+
+```bash
+make test-e2e-smoke
+DUNVYR_E2E_BACKEND_PORT=8101 DUNVYR_E2E_FRONTEND_PORT=5274 make test-e2e-smoke
+```
+
+Браузеры устанавливаются `make setup` (Chromium; desktop- и mobile-проекты используют один и тот же браузер) и кэшируются в `~/.cache/ms-playwright`. Если в системе не хватает системных библиотек, поставьте их вместе с браузером: `cd frontend && mise exec -- npx playwright install --with-deps chromium`. Артефакты прогонов (`frontend/test-results/`, `frontend/playwright-report/`) в Git не попадают.
+
+`make test-ci` — полный локальный gate публикации: `test-unit` (unit + `lint-imports` + frontend Vitest), `test-integration` и `test-e2e-smoke`. `make test-e2e-full` сейчас запускает тот же набор, что и smoke, — осознанное совпадение до появления расширенных E2E-сценариев.
 
 ## Git hooks
 

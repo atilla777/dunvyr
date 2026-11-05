@@ -36,6 +36,6 @@
 
 До начала изменения определяй затронутые Bounded Contexts и потребителей их публичных контрактов; перед публикацией приложи фактические результаты тестов, ревью и ограничения. Локально: тесты затронутого поведения; быстрые Git hooks; перед публикацией в `main` — полный обязательный gate (все unit, интеграционные, architecture, frontend тесты, E2E smoke), после push — CI GitHub Actions; расширенные E2E по риску или на приёмке MVP.
 
-**Корневой `Makefile` и git hooks уже существуют и являются публичным интерфейсом локальных команд** (`make setup`, `make lint`, `make test-unit`, `make test-integration`, `make test-affected`, `make dev`, `make hooks`). E2E-цели (`test-e2e-smoke`, `test-e2e-full`), `test-ci` и CI GitHub Actions ещё не созданы — не заявляй их выполнение.
+**Корневой `Makefile` и git hooks уже существуют и являются публичным интерфейсом локальных команд** (`make setup`, `make lint`, `make test-unit`, `make test-integration`, `make test-e2e-smoke`, `make test-e2e-full`, `make test-ci`, `make test-affected`, `make dev`, `make hooks`). CI GitHub Actions ещё не создан — не заявляй его выполнение.
 
 Разрешения на commit/push, публикацию в `main`, изменение CI и Beads/Dolt-публикацию определяются реальными полномочиями и согласованным workflow; опасные операции, force push, переписывание опубликованной истории и обход branch protection не разрешены этим файлом.

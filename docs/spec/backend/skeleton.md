@@ -15,14 +15,14 @@
 
 ## App-factory и health-эндпоинт
 
-- Точка сборки — `dunvyr.main.create_app(*, engine=None, database_url=None)`: composition root, регистрирует роутеры (health + identity + campaigns), кладёт engine/session factory и настройки (allowed origins, cookie Secure, rate limiters identity/campaigns, фабрики сервисов identity/campaigns, `guest_resolver_factory`) в `app.state`, подключает CORS-middleware (allow-headers: `Content-Type`, `Idempotency-Key`). При `DUNVYR_AUTO_MIGRATE=1` применяет Alembic-миграции к движку до старта — контракты контекстов и переменные окружения: [identity](identity.md), [campaigns](campaigns.md). Модульного экземпляра приложения нет; ASGI-запуск: `uvicorn --factory dunvyr.main:create_app`.
+- Точка сборки — `dunvyr.main.create_app(*, engine=None, database_url=None)`: composition root, регистрирует роутеры (health + identity + campaigns + communication), кладёт engine/session factory и настройки (allowed origins, cookie Secure, rate limiters identity/campaigns, фабрики сервисов identity/campaigns, `guest_resolver_factory`, `campaign_membership_reader_factory`, `chat_service_factory`, `realtime_hub` и post-commit `campaign_event_publisher` для связи campaigns → communication) в `app.state`, подключает CORS-middleware (allow-headers: `Content-Type`, `Idempotency-Key`). При `DUNVYR_AUTO_MIGRATE=1` применяет Alembic-миграции к движку до старта — контракты контекстов и переменные окружения: [identity](identity.md), [campaigns](campaigns.md), [communication](communication.md). Модульного экземпляра приложения нет; ASGI-запуск: `uvicorn --factory dunvyr.main:create_app` (runtime-зависимость `websockets` — реальный WS-апгрейд в uvicorn; интеграционные тесты поднимают WS in-process без него).
 - Контракт `GET /health` → `200` с телом `{"status": "ok", "database": "ok"}`; `database` проверяется реальным `SELECT 1` через сессию приложения, а не константой.
 - Разрешение URL БД (в порядке приоритета): явный аргумент → `database_url` → переменная окружения `DUNVYR_DATABASE_URL` → default `sqlite:///./dunvyr.db` (файл рабочей БД и его WAL/SHM-sidecar-файлы игнорируются Git).
 
 ## База данных и миграции
 
 - SQLAlchemy 2.x. На каждом SQLite-соединении включается `PRAGMA foreign_keys=ON`; для файловых БД включается WAL journaling (для `:memory:` — no-op).
-- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL); бизнес-миграции: `0002` (identity) — [identity](identity.md), `0003`–`0004` (campaigns: схема + уникальность псевдонима члена) — [campaigns](campaigns.md). Авто-миграция при старте — opt-in `DUNVYR_AUTO_MIGRATE=1` (движок приложения, `DUNVYR_MIGRATIONS_DIR`, default `migrations` от cwd=backend).
+- Схема рабочей БД создаётся только через Alembic (не `create_all`). Миграция `0001` создаёт единственную техническую таблицу `app_metadata` (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL); бизнес-миграции: `0002` (identity) — [identity](identity.md), `0003`–`0004` (campaigns: схема + уникальность псевдонима члена) — [campaigns](campaigns.md), `0005` (communication: единый поток событий чата) — [communication](communication.md). Авто-миграция при старте — opt-in `DUNVYR_AUTO_MIGRATE=1` (движок приложения, `DUNVYR_MIGRATIONS_DIR`, default `migrations` от cwd=backend).
 - Alembic-окружение берёт URL из `sqlalchemy.url` ini-опции → `DUNVYR_DATABASE_URL` → default; поддерживает движок, инжектированный через `config.attributes["engine"]` (используется тестами).
 
 ## Тестовая архитектура и изоляция
@@ -39,8 +39,8 @@
 3. запрет импорта чужих `domain`/`application`/`infrastructure`-слоёв (wildcard-контракт);
 4. слоёвость app-level: `dunvyr.main` (composition root) > `dunvyr.presentation` > `dunvyr.infrastructure`.
 
-Плюс по 4 контракта identity и campaigns (слои `presentation > application > domain` и `infrastructure > application > domain`, запреты для `public`/`domain` каждого контекста) — см. [identity](identity.md), [campaigns](campaigns.md). Итого 12 контрактов, все зелёные.
+Плюс по 4 контракта identity, campaigns и communication (слои `presentation > application > domain` и `infrastructure > application > domain`, запреты для `public`/`domain` каждого контекста) — см. [identity](identity.md), [campaigns](campaigns.md), [communication](communication.md). Итого **16** контрактов, все зелёные.
 
 ## Ограничения (ещё не существует)
 
-Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). Гостевая идентичность — [identity](identity.md); кампании (срез организатора + гостевой срез join/отзыв) — [campaigns](campaigns.md). WebSocket/чат и остальная игровая доменная логика — будущие вехи; контексты кроме identity/campaigns пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). Гостевая идентичность — [identity](identity.md); кампании (срез организатора + гостевой срез join/отзыв) — [campaigns](campaigns.md); чат/WS и единый поток событий — [communication](communication.md). Остальная игровая доменная логика — будущие вехи; контексты кроме identity/campaigns/communication пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

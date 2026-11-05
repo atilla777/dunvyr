@@ -29,10 +29,11 @@
 ## Тестовая архитектура
 
 - Component-тест `src/App.test.tsx` реально рендерит `App` через `@testing-library/react` в jsdom и проверяет заголовок уровня 1 «Dunvyr» и строку статуса; матчеры — `@testing-library/jest-dom/vitest` (setup `src/test/setup.ts`).
-- Конфигурация Vitest — в `vite.config.ts` (`environment: 'jsdom'`, `css: false` — стили в тестах не импортируются).
+- Конфигурация Vitest — в `vite.config.ts` (`environment: 'jsdom'`, `css: false` — стили в тестах не импортируются; `include: ['src/**/*.test.{ts,tsx}']`). Unit-тесты живут только в `src/`; Playwright-спеки живут в `e2e/` и в Vitest-прогон не попадают (введено задачей dunvyr-68c.4, подтверждено: `make test-unit` собирает 1 файл / 1 тест).
+- Браузерные E2E — `@playwright/test`: конфиг `playwright.config.ts` и спеки `e2e/` покрываются `tsc --noEmit` (`tsconfig.json` include) и ESLint/Prettier; запуск — `make test-e2e-smoke` — см. [tooling/commands](../tooling/commands.md).
 
 ## Ограничения (ещё не существует)
 
-Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5); командный интерфейс и git hooks — уже [tooling/commands.md](../tooling/commands.md). Игровые UI-компоненты, WebSocket, роутинг, продуктовая стилевая тема — будущие вехи. Автоматизированная браузерная проверка страницы появится с задачей E2E; открытие страницы в реальном браузере — ручной шаг из README.
+CI (dunvyr-68c.5); E2E smoke и командный интерфейс — уже [tooling/commands.md](../tooling/commands.md). Игровые UI-компоненты, WebSocket, роутинг, продуктовая стилевая тема — будущие вехи.
 
 Известные ограничения зависимостей (отложены по review задачи dunvyr-68c.2, L1/L2): `npm audit` на lock фиксирует 7 moderate уязвимостей (minimatch через `@typescript-eslint/typescript-estree`, только dev-toolchain, runtime-зависимости не затронуты); безопасного фикса без даунгрейда typescript-eslint нет — пере-аудит при следующем обновлении зависимостей. ESLint 9.x (EOL-линия) — осознанный выбор этой вехи; переход на ESLint 10.x возможен без даунгрейда typescript-eslint, кандидат на ближайшую подходящую задачу.

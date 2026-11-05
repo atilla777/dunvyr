@@ -41,4 +41,4 @@
 
 ## Ограничения (ещё не существует)
 
-Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс и git hooks — [tooling/commands.md](../tooling/commands.md). Playwright/E2E (dunvyr-68c.4), CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).
+Frontend-скелет — [frontend/skeleton.md](../frontend/skeleton.md); командный интерфейс, git hooks и E2E smoke — [tooling/commands.md](../tooling/commands.md). CI (dunvyr-68c.5). WebSocket, игровая доменная логика и бизнес-таблицы — будущие вехи; layout контекстов пока без слоёв-подкаталогов (честный минимум для пустых пакетов).

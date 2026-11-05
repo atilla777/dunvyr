@@ -65,9 +65,9 @@ disallow_untyped_decorators = false
 root_packages = ["dunvyr"]
 
 [[tool.importlinter.contracts]]
-name = "Domain contexts are mutually independent"
-type = "independence"
-modules = [
+name = "Domain contexts are mutually independent except public contracts"
+type = "forbidden"
+source_modules = [
     "dunvyr.identity",
     "dunvyr.campaigns",
     "dunvyr.characters",
@@ -75,6 +75,36 @@ modules = [
     "dunvyr.gameplay",
     "dunvyr.communication",
     "dunvyr.narration",
+]
+forbidden_modules = [
+    "dunvyr.identity.domain",
+    "dunvyr.identity.application",
+    "dunvyr.identity.infrastructure",
+    "dunvyr.identity.presentation",
+    "dunvyr.campaigns.domain",
+    "dunvyr.campaigns.application",
+    "dunvyr.campaigns.infrastructure",
+    "dunvyr.campaigns.presentation",
+    "dunvyr.characters.domain",
+    "dunvyr.characters.application",
+    "dunvyr.characters.infrastructure",
+    "dunvyr.characters.presentation",
+    "dunvyr.adventures.domain",
+    "dunvyr.adventures.application",
+    "dunvyr.adventures.infrastructure",
+    "dunvyr.adventures.presentation",
+    "dunvyr.gameplay.domain",
+    "dunvyr.gameplay.application",
+    "dunvyr.gameplay.infrastructure",
+    "dunvyr.gameplay.presentation",
+    "dunvyr.communication.domain",
+    "dunvyr.communication.application",
+    "dunvyr.communication.infrastructure",
+    "dunvyr.communication.presentation",
+    "dunvyr.narration.domain",
+    "dunvyr.narration.application",
+    "dunvyr.narration.infrastructure",
+    "dunvyr.narration.presentation",
 ]
 
 [[tool.importlinter.contracts]]
@@ -155,4 +185,43 @@ forbidden_modules = [
     "dunvyr.identity.infrastructure",
     "dunvyr.identity.presentation",
     "dunvyr.identity.public",
+]
+
+[[tool.importlinter.contracts]]
+name = "Campaigns layering: presentation > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.campaigns.presentation",
+    "dunvyr.campaigns.application",
+    "dunvyr.campaigns.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Campaigns layering: infrastructure > application > domain"
+type = "layers"
+layers = [
+    "dunvyr.campaigns.infrastructure",
+    "dunvyr.campaigns.application",
+    "dunvyr.campaigns.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Campaigns public contract imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.campaigns.public"]
+forbidden_modules = [
+    "dunvyr.campaigns.application",
+    "dunvyr.campaigns.infrastructure",
+    "dunvyr.campaigns.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Campaigns domain imports no outer layers"
+type = "forbidden"
+source_modules = ["dunvyr.campaigns.domain"]
+forbidden_modules = [
+    "dunvyr.campaigns.application",
+    "dunvyr.campaigns.infrastructure",
+    "dunvyr.campaigns.presentation",
+    "dunvyr.campaigns.public",
 ]

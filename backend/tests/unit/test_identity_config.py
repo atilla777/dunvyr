@@ -10,6 +10,7 @@ from dunvyr.identity.presentation.config import (
     AllowedOrigins,
     env_flag,
 )
+from dunvyr.identity.public import SESSION_COOKIE_NAME as PUBLIC_SESSION_COOKIE_NAME
 
 
 @pytest.mark.unit
@@ -55,3 +56,4 @@ def test_env_flag_rejects_other_values(raw: str | None) -> None:
 @pytest.mark.unit
 def test_session_cookie_name_is_fixed() -> None:
     assert SESSION_COOKIE_NAME == "dunvyr_session"
+    assert SESSION_COOKIE_NAME is PUBLIC_SESSION_COOKIE_NAME

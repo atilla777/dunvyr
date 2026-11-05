@@ -4,13 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from dunvyr.identity.public import SESSION_COOKIE_NAME
+
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 )
-SESSION_COOKIE_NAME = "dunvyr_session"
 
 _TRUTHY = {"1", "true", "yes", "on"}
+
+__all__ = [
+    "DEFAULT_ALLOWED_ORIGINS",
+    "SESSION_COOKIE_NAME",
+    "AllowedOrigins",
+    "env_flag",
+]
 
 
 def env_flag(raw: str | None) -> bool:

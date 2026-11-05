@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
+SESSION_COOKIE_NAME = "dunvyr_session"
+"""Name of the HttpOnly session cookie other contexts may read."""
+
 
 @dataclass(frozen=True, slots=True)
 class GuestSnapshot:
@@ -22,4 +25,4 @@ class GuestResolver(Protocol):
     def resolve_guest(self, session_token: str | None) -> GuestSnapshot | None: ...
 
 
-__all__ = ["GuestResolver", "GuestSnapshot"]
+__all__ = ["SESSION_COOKIE_NAME", "GuestResolver", "GuestSnapshot"]

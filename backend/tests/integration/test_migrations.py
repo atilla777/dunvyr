@@ -19,6 +19,8 @@ def test_migrations_create_alembic_version_and_business_tables(
         "app_metadata",
         "identity_guests",
         "identity_sessions",
+        "campaigns_campaigns",
+        "campaigns_members",
     } <= table_names
 
 
@@ -40,7 +42,7 @@ def test_migration_head_is_recorded(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert version == "0002"
+    assert version == "0003"
 
 
 @pytest.mark.integration
@@ -55,3 +57,25 @@ def test_identity_tables_use_owned_prefix_and_unique_token_hash(
 
     assert identity_tables == {"identity_guests", "identity_sessions"}
     assert any(constraint["column_names"] == ["token_hash"] for constraint in unique_constraints)
+
+
+@pytest.mark.integration
+def test_campaigns_tables_use_owned_prefix_and_database_uniqueness(
+    migrated_engine: Engine,
+) -> None:
+    with migrated_engine.connect() as connection:
+        campaigns_tables = {
+            name for name in inspect(connection).get_table_names() if name.startswith("campaigns_")
+        }
+        campaign_unique = inspect(connection).get_unique_constraints("campaigns_campaigns")
+        member_primary_key = inspect(connection).get_pk_constraint("campaigns_members")
+
+    assert campaigns_tables == {"campaigns_campaigns", "campaigns_members"}
+    assert any(
+        constraint["column_names"] == ["invitation_token_hash"] for constraint in campaign_unique
+    )
+    assert any(
+        constraint["column_names"] == ["organizer_id", "idempotency_key"]
+        for constraint in campaign_unique
+    )
+    assert member_primary_key["constrained_columns"] == ["campaign_id", "guest_id"]

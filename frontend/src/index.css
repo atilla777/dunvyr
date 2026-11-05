@@ -93,6 +93,93 @@ body {
   color: #b42318;
 }
 
+.campaign-create {
+  display: flex;
+  width: min(24rem, 100%);
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.campaign-create__label {
+  font-weight: 600;
+}
+
+.campaign-create__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #afb8c1;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+}
+
+.campaign-create__button,
+.campaign__copy {
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #1f6feb;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.campaign-create__button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.campaign-create__error,
+.campaign__error {
+  margin: 0;
+  color: #b42318;
+}
+
+.campaign {
+  width: min(32rem, 100%);
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.campaign__title {
+  margin: 0 0 0.25rem;
+}
+
+.campaign__seats,
+.campaign__note {
+  margin: 0;
+  color: #57606a;
+}
+
+.campaign__subtitle {
+  margin: 1rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+.campaign__invitation {
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.campaign__members {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.campaign__member-role,
+.campaign__member-self {
+  color: #57606a;
+}
+
+.campaign__copy-status {
+  margin: 0.5rem 0 0;
+}
+
 :focus-visible {
   outline: 2px solid #1f6feb;
   outline-offset: 2px;
@@ -115,5 +202,22 @@ body {
 
   .login__error {
     color: #ff7b72;
+  }
+
+  .campaign-create__input {
+    border-color: #57606a;
+    background: #0d1117;
+  }
+
+  .campaign-create__error,
+  .campaign__error {
+    color: #ff7b72;
+  }
+
+  .campaign__seats,
+  .campaign__note,
+  .campaign__member-role,
+  .campaign__member-self {
+    color: #a6adb5;
   }
 }

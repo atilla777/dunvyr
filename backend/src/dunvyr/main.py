@@ -9,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
 
 from dunvyr import __version__
+from dunvyr.campaigns.application.rate_limit import (
+    CampaignRateLimitPolicy,
+    CampaignSlidingWindowRateLimiter,
+)
+from dunvyr.campaigns.infrastructure.factory import build_campaign_service
+from dunvyr.campaigns.presentation.router import router as campaigns_router
 from dunvyr.identity.application.rate_limit import RateLimitPolicy, SlidingWindowRateLimiter
 from dunvyr.identity.infrastructure.clock import utc_now
 from dunvyr.identity.infrastructure.factory import build_identity_service
@@ -54,16 +60,23 @@ def create_app(
     app.state.allowed_origins = allowed_origins
     app.state.cookie_secure = env_flag(os.environ.get("DUNVYR_COOKIE_SECURE"))
     app.state.rate_limiter = SlidingWindowRateLimiter(policy=RateLimitPolicy(), clock=utc_now)
+    app.state.campaign_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(),
+        clock=utc_now,
+    )
     app.state.identity_service_factory = build_identity_service
+    app.state.guest_resolver_factory = build_identity_service
+    app.state.campaign_service_factory = build_campaign_service
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(allowed_origins.origins),
         allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Idempotency-Key"],
     )
 
     app.include_router(health_router)
     app.include_router(identity_router)
+    app.include_router(campaigns_router)
     return app

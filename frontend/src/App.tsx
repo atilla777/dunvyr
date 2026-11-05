@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { fetchCurrentGuest, type Guest } from './api';
+import { fetchCurrentGuest, type Campaign, type Guest } from './api';
+import { CampaignScreen } from './CampaignScreen';
+import { CreateCampaignForm } from './CreateCampaignForm';
 import { LoginForm } from './LoginForm';
 
 type SessionState =
@@ -8,6 +10,7 @@ type SessionState =
 
 export function App() {
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -30,7 +33,14 @@ export function App() {
         <LoginForm onAuthenticated={(guest) => setSession({ status: 'authenticated', guest })} />
       )}
       {session.status === 'authenticated' && (
-        <p className="app__status">Вы вошли как {session.guest.nickname}</p>
+        <>
+          <p className="app__status">Вы вошли как {session.guest.nickname}</p>
+          {campaign === null ? (
+            <CreateCampaignForm onCreated={setCampaign} />
+          ) : (
+            <CampaignScreen campaign={campaign} currentGuestId={session.guest.id} />
+          )}
+        </>
       )}
     </main>
   );

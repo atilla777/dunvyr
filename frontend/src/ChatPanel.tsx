@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { fetchChatHistory } from './api';
 import { mergeChatEvents, type ChatEvent, type ChatMember } from './chat';
@@ -37,8 +37,11 @@ function connectionMessage(status: ChatConnectionStatus): string {
   if (status === 'connecting') {
     return 'Подключаемся к чату…';
   }
+  if (status === 'reconnecting') {
+    return 'Соединение с чатом потеряно. Восстанавливаем…';
+  }
   if (status === 'closed') {
-    return 'Соединение с чатом потеряно. Обновите страницу.';
+    return 'Соединение с чатом потеряно. Восстановить не удалось. Обновите страницу.';
   }
   return 'Ошибка соединения с чатом. Обновите страницу.';
 }
@@ -55,6 +58,8 @@ export function ChatPanel({
   const [connection, setConnection] = useState<ChatConnectionStatus>('connecting');
   const [error, setError] = useState<string | null>(null);
   const seenEventIds = useRef(new Set<string>());
+  const lastSequence = useRef(0);
+  const hasSnapshot = useRef(false);
   const transportRef = useRef<ChatTransport | null>(null);
   const onMemberJoinedRef = useRef(onMemberJoined);
 
@@ -62,41 +67,43 @@ export function ChatPanel({
     onMemberJoinedRef.current = onMemberJoined;
   }, [onMemberJoined]);
 
-  useEffect(() => {
-    let active = true;
-    fetchChatHistory(campaignId)
-      .then((history) => {
-        if (!active) {
-          return;
+  /**
+   * Merge server events exactly once per `event_id`. The same event can arrive
+   * from the initial snapshot, the live stream and a reconnect snapshot; the
+   * seen set is shared by all three sources.
+   */
+  const acceptEvents = useCallback((incoming: ChatEvent[], notifyMembers: boolean) => {
+    const fresh: ChatEvent[] = [];
+    for (const event of incoming) {
+      if (seenEventIds.current.has(event.event_id)) {
+        continue;
+      }
+      seenEventIds.current.add(event.event_id);
+      fresh.push(event);
+    }
+    if (fresh.length === 0) {
+      return;
+    }
+    setEvents((current) => mergeChatEvents(current, fresh));
+    if (notifyMembers) {
+      for (const event of fresh) {
+        if (event.type === 'member_joined') {
+          onMemberJoinedRef.current?.(event.member);
         }
-        for (const event of history.events) {
-          seenEventIds.current.add(event.event_id);
-        }
-        setEvents((current) => mergeChatEvents(current, history.events));
-        setHistoryStatus('ready');
-      })
-      .catch(() => {
-        if (active) {
-          setHistoryStatus('error');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [campaignId]);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
+    seenEventIds.current = new Set();
+    lastSequence.current = 0;
+    hasSnapshot.current = false;
     const factory = transportFactory ?? createChatTransport;
     const transport = factory(campaignId, {
       onEvent: (event) => {
-        if (!active || seenEventIds.current.has(event.event_id)) {
-          return;
-        }
-        seenEventIds.current.add(event.event_id);
-        setEvents((current) => mergeChatEvents(current, [event]));
-        if (event.type === 'member_joined') {
-          onMemberJoinedRef.current?.(event.member);
+        if (active) {
+          acceptEvents([event], true);
         }
       },
       onStatus: (status) => {
@@ -109,6 +116,22 @@ export function ChatPanel({
           setError(serverErrorMessage(code));
         }
       },
+      onResync: async (signal) => {
+        const after = hasSnapshot.current ? lastSequence.current : undefined;
+        try {
+          const history = await fetchChatHistory(campaignId, after, signal);
+          if (!active || signal.aborted) return;
+          for (const event of history.events) {
+            lastSequence.current = Math.max(lastSequence.current, event.sequence);
+          }
+          hasSnapshot.current = true;
+          acceptEvents(history.events, true);
+          setHistoryStatus('ready');
+        } catch (error) {
+          if (active && !signal.aborted) setHistoryStatus('error');
+          throw error;
+        }
+      },
     });
     transportRef.current = transport;
     return () => {
@@ -116,7 +139,7 @@ export function ChatPanel({
       transportRef.current = null;
       transport.close();
     };
-  }, [campaignId, transportFactory]);
+  }, [campaignId, transportFactory, acceptEvents]);
 
   function handleSubmit(submitEvent: FormEvent<HTMLFormElement>) {
     submitEvent.preventDefault();
@@ -131,7 +154,7 @@ export function ChatPanel({
     }
     const sent = transportRef.current?.sendMessage(content) ?? false;
     if (!sent) {
-      setError('Чат не подключён. Сообщение не отправлено; обновите страницу.');
+      setError('Чат не подключён. Сообщение не отправлено.');
       return;
     }
     setDraft('');

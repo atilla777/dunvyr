@@ -8,6 +8,7 @@ import type { ChatConnectionStatus, ChatTransport, ChatTransportHandlers } from 
 const CAMPAIGN_ID = '22222222-2222-4222-8222-222222222222';
 const CURRENT_GUEST_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_GUEST_ID = '33333333-3333-4333-8333-333333333333';
+const CAROL_GUEST_ID = '44444444-4444-4444-8444-444444444444';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -38,6 +39,17 @@ function messageEvent(
       content,
       created_at: '2026-01-01T12:00:00+00:00',
     },
+  };
+}
+
+function memberJoinedEvent(eventId: string, sequence: number, member: ChatMember): ChatEvent {
+  return {
+    type: 'member_joined',
+    event_id: eventId,
+    campaign_id: CAMPAIGN_ID,
+    sequence,
+    occurred_at: member.joined_at,
+    member,
   };
 }
 
@@ -75,7 +87,12 @@ function fakeFactory(initialStatus: ChatConnectionStatus = 'open') {
       close: record.close,
     };
     transports.push(record);
-    handlers.onStatus(initialStatus);
+    if (initialStatus === 'open') {
+      void Promise.resolve()
+        .then(() => handlers.onResync?.(new AbortController().signal))
+        .then(() => handlers.onStatus('open'))
+        .catch(() => undefined);
+    } else handlers.onStatus(initialStatus);
     return transport;
   });
   return { factory, transports };
@@ -116,6 +133,7 @@ describe('ChatPanel', () => {
     expect(screen.getByText('Ответ Боба').closest('li')).not.toHaveClass('chat__message--own');
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(`/api/campaigns/${CAMPAIGN_ID}/chat/events`, {
       credentials: 'same-origin',
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -179,14 +197,7 @@ describe('ChatPanel', () => {
       role: 'player',
       joined_at: '2026-01-01T12:05:00+00:00',
     };
-    const event: ChatEvent = {
-      type: 'member_joined',
-      event_id: 'e1',
-      campaign_id: CAMPAIGN_ID,
-      sequence: 1,
-      occurred_at: '2026-01-01T12:05:00+00:00',
-      member,
-    };
+    const event = memberJoinedEvent('e1', 1, member);
     act(() => {
       transports[0]?.handlers.onEvent(event);
       transports[0]?.handlers.onEvent(event);
@@ -195,6 +206,28 @@ describe('ChatPanel', () => {
     expect(await screen.findByText('Боб присоединился к кампании')).toBeInTheDocument();
     expect(onMemberJoined).toHaveBeenCalledTimes(1);
     expect(onMemberJoined).toHaveBeenCalledWith(member);
+  });
+
+  it('shows honest loading, stale and offline connection states', async () => {
+    stubHistory();
+    const { factory, transports } = fakeFactory('connecting');
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+
+    expect(await screen.findByText('Подключаемся к чату…')).toBeInTheDocument();
+
+    act(() => transports[0]?.handlers.onStatus('reconnecting'));
+    expect(screen.getByText('Соединение с чатом потеряно. Восстанавливаем…')).toBeInTheDocument();
+
+    act(() => transports[0]?.handlers.onStatus('closed'));
+    expect(
+      screen.getByText('Соединение с чатом потеряно. Восстановить не удалось. Обновите страницу.'),
+    ).toBeInTheDocument();
   });
 
   it('reports an honest offline state without opening a second connection', async () => {
@@ -209,7 +242,9 @@ describe('ChatPanel', () => {
     );
 
     expect(
-      await screen.findByText('Соединение с чатом потеряно. Обновите страницу.'),
+      await screen.findByText(
+        'Соединение с чатом потеряно. Восстановить не удалось. Обновите страницу.',
+      ),
     ).toBeInTheDocument();
     expect(factory).toHaveBeenCalledTimes(1);
 
@@ -218,8 +253,85 @@ describe('ChatPanel', () => {
 
     expect(transports[0]?.sent).toEqual([]);
     expect(
-      await screen.findByText('Чат не подключён. Сообщение не отправлено; обновите страницу.'),
+      await screen.findByText('Чат не подключён. Сообщение не отправлено.'),
     ).toBeInTheDocument();
+  });
+
+  it('recovers missed events after reconnect with the sequence cursor without duplicates', async () => {
+    const e1 = messageEvent('e1', 1, OTHER_GUEST_ID, 'Боб', 'Первое');
+    const e2 = messageEvent('e2', 2, OTHER_GUEST_ID, 'Боб', 'Второе');
+    const e3 = messageEvent('e3', 3, OTHER_GUEST_ID, 'Боб', 'Третье');
+    const carol: ChatMember = {
+      guest_id: CAROL_GUEST_ID,
+      nickname: 'Кэрол',
+      role: 'player',
+      joined_at: '2026-01-01T12:10:00+00:00',
+    };
+    const e4 = memberJoinedEvent('e4', 4, carol);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(history([e1, e2])))
+      .mockResolvedValueOnce(jsonResponse(history([e2, e3, e4])))
+      .mockResolvedValueOnce(jsonResponse(history([e3, e4])));
+    vi.stubGlobal('fetch', fetchMock);
+    const { factory, transports } = fakeFactory();
+    const onMemberJoined = vi.fn();
+
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        onMemberJoined={onMemberJoined}
+        transportFactory={factory}
+      />,
+    );
+
+    expect(await screen.findByText('Первое')).toBeInTheDocument();
+    expect(screen.getByText('Второе')).toBeInTheDocument();
+
+    const handlers = transports[0]?.handlers;
+    act(() => {
+      handlers?.onStatus('reconnecting');
+      handlers?.onEvent(e3);
+    });
+    expect(screen.getByText('Соединение с чатом потеряно. Восстанавливаем…')).toBeInTheDocument();
+
+    // First reconnect snapshot: the server replays e2/e3 (already seen) plus e4.
+    await act(async () => {
+      await handlers?.onResync?.(new AbortController().signal);
+      handlers?.onStatus('open');
+    });
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/campaigns/${CAMPAIGN_ID}/chat/events?after=2`,
+      { credentials: 'same-origin', signal: expect.any(AbortSignal) },
+    );
+    expect(screen.getAllByText('Второе')).toHaveLength(1);
+    expect(screen.getAllByText('Третье')).toHaveLength(1);
+    expect(screen.getAllByText('Кэрол присоединился к кампании')).toHaveLength(1);
+    expect(onMemberJoined).toHaveBeenCalledTimes(1);
+    expect(onMemberJoined).toHaveBeenCalledWith(carol);
+    expect(screen.getByText('Чат на связи')).toBeInTheDocument();
+
+    // A repeated snapshot for the same cursor must not duplicate the stream.
+    await act(async () => {
+      await handlers?.onResync?.(new AbortController().signal);
+    });
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/campaigns/${CAMPAIGN_ID}/chat/events?after=4`,
+      { credentials: 'same-origin', signal: expect.any(AbortSignal) },
+    );
+    expect(screen.getAllByText('Третье')).toHaveLength(1);
+    expect(screen.getAllByText('Кэрол присоединился к кампании')).toHaveLength(1);
+    expect(onMemberJoined).toHaveBeenCalledTimes(1);
+
+    const renderedOrder = screen.getAllByRole('listitem').map((item) => item.textContent ?? '');
+    expect(renderedOrder).toHaveLength(4);
+    expect(renderedOrder[0]).toContain('Первое');
+    expect(renderedOrder[1]).toContain('Второе');
+    expect(renderedOrder[2]).toContain('Третье');
+    expect(renderedOrder[3]).toContain('Кэрол присоединился к кампании');
   });
 
   it('reports a failed history load without hiding the composer', async () => {
@@ -237,5 +349,99 @@ describe('ChatPanel', () => {
       await screen.findByText('Не удалось загрузить историю чата. Попробуйте обновить страницу.'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Сообщение')).toBeInTheDocument();
+  });
+  it('uses snapshot events not live sequence or response watermark as cursor', async () => {
+    const e5 = messageEvent('e5', 5, OTHER_GUEST_ID, 'Боб', 'Пять');
+    const e6 = messageEvent('e6', 6, OTHER_GUEST_ID, 'Боб', 'Шесть');
+    const e7 = messageEvent('e7', 7, OTHER_GUEST_ID, 'Боб', 'Семь');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ ...history([e5]), last_sequence: 7 }))
+      .mockResolvedValueOnce(jsonResponse(history([e6, e7])));
+    vi.stubGlobal('fetch', fetchMock);
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('Пять');
+    act(() => transports[0]?.handlers.onEvent(e7));
+    await act(async () => {
+      await transports[0]?.handlers.onResync?.(new AbortController().signal);
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('?after=5');
+    expect(screen.getAllByText('Семь')).toHaveLength(1);
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Пять'),
+      expect.stringContaining('Шесть'),
+      expect.stringContaining('Семь'),
+    ]);
+  });
+
+  it('uses after zero after an empty initial snapshot and ignores aborted completion', async () => {
+    let finish: (value: Response) => void = () => {};
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(history()))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(jsonResponse(history()));
+    vi.stubGlobal('fetch', fetchMock);
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('Сообщений пока нет. Напишите первым.');
+    const controller = new AbortController();
+    let pending: Promise<void> | void;
+    act(() => {
+      pending = transports[0]?.handlers.onResync?.(controller.signal);
+    });
+    controller.abort();
+    await act(async () => {
+      finish(jsonResponse(history([messageEvent('late', 8, OTHER_GUEST_ID, 'Боб', 'Поздно')])));
+      await pending;
+    });
+    expect(screen.queryByText('Поздно')).not.toBeInTheDocument();
+    await act(async () => {
+      await transports[0]?.handlers.onResync?.(new AbortController().signal);
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('?after=0');
+    expect(fetchMock.mock.calls[2]?.[0]).toContain('?after=0');
+  });
+
+  it('notifies about members in the initial snapshot exactly once', async () => {
+    const member: ChatMember = {
+      guest_id: OTHER_GUEST_ID,
+      nickname: 'Боб',
+      role: 'player',
+      joined_at: '2026-01-01T12:05:00+00:00',
+    };
+    const event = memberJoinedEvent('join', 1, member);
+    stubHistory([event]);
+    const onMemberJoined = vi.fn();
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        onMemberJoined={onMemberJoined}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('Боб присоединился к кампании');
+    act(() => transports[0]?.handlers.onEvent(event));
+    expect(onMemberJoined).toHaveBeenCalledTimes(1);
   });
 });

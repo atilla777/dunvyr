@@ -5,12 +5,12 @@
     "advanced": {
       "description": "Complex requirements, architecture, diagnostics, and independent review for MIS",
       "mode": "subagent",
-      "model": "opencode-go/glm-5.3"
+      "model": "openai/gpt-6.1-sol"
     },
     "standard": {
       "description": "Implementation, tests, and focused fixes for MIS",
       "mode": "subagent",
-      "model": "opencode-go/deepseek-v4.1-flash"
+      "model": "openai/gpt-6.1-terra"
     }
   },
   "worktree": {

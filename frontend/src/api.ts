@@ -248,11 +248,21 @@ export async function joinCampaign(secret: string): Promise<Campaign> {
   return (await response.json()) as Campaign;
 }
 
-export async function fetchChatHistory(campaignId: string): Promise<ChatHistory> {
+/**
+ * Fetch the chat snapshot. Without a cursor the server returns the latest
+ * slice; `afterSequence` asks only for events the client has not seen yet.
+ */
+export async function fetchChatHistory(
+  campaignId: string,
+  afterSequence?: number,
+  signal?: AbortSignal,
+): Promise<ChatHistory> {
+  const query = afterSequence === undefined ? '' : `?after=${String(afterSequence)}`;
   let response: Response;
   try {
-    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/chat/events`, {
+    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/chat/events${query}`, {
       credentials: 'same-origin',
+      signal,
     });
   } catch {
     throw new ApiError(CHAT_UNAVAILABLE);

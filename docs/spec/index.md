@@ -7,8 +7,10 @@
 - [Backend-скелет: toolchain, app-factory, миграции, тестовая архитектура](backend/skeleton.md)
 - [Гостевая идентичность: домен, сессии, REST-контракт, cookie, миграции](backend/identity.md)
 - [Кампании: домен, идемпотентное создание, присоединение по приглашению, членство, отзыв, REST-контракт](backend/campaigns.md)
-- [Communication: чат кампании в реальном времени, единый поток событий, WebSocket, доставка после commit](backend/communication.md)
+- [Communication: чат кампании в реальном времени, единый поток событий, WebSocket, доставка после commit, reconnect-протокол клиента](backend/communication.md)
 - [Frontend-скелет: toolchain, минимальная страница, dev-сервер, проверки](frontend/skeleton.md)
 - [Командный интерфейс: Makefile, make dev, git hooks, E2E, CI, изоляция прогонов](tooling/commands.md)
 
 Не выводить нормативные требования исключительно из случайно существующего кода. Официальные продуктовые намерения — в `docs/product/`, инженерные ограничения — в `docs/rules/`, конкретика задачи — в Beads.
+
+> Локальный repair dunvyr-u4k.5 проверен в рабочем дереве; интеграция и независимое ревью ожидаются.

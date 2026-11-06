@@ -191,18 +191,18 @@ async def campaign_chat(websocket: WebSocket, campaign_id: UUID) -> None:
         await websocket.close(code=WS_POLICY_VIOLATION)
         return
 
-    await websocket.accept()
     hub: RealtimeHub = app.state.realtime_hub
     token, queue = hub.subscribe(campaign_id)
-    receiver = asyncio.create_task(_receive_loop(websocket, app, campaign_id, guest.id))
-    sender = asyncio.create_task(_pump(websocket, queue))
+    tasks: list[asyncio.Task[None]] = []
     try:
-        await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
+        await websocket.accept()
+        tasks.append(asyncio.create_task(_receive_loop(websocket, app, campaign_id, guest.id)))
+        tasks.append(asyncio.create_task(_pump(websocket, queue)))
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        receiver.cancel()
-        sender.cancel()
-        receiver.add_done_callback(_consume_task)
-        sender.add_done_callback(_consume_task)
+        for task in tasks:
+            task.cancel()
+            task.add_done_callback(_consume_task)
         hub.unsubscribe(campaign_id, token)
 
 

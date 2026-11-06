@@ -166,7 +166,10 @@ describe('CampaignScreen', () => {
     let handlers: ChatTransportHandlers | null = null;
     const transportFactory: ChatTransportFactory = (_campaignId, nextHandlers) => {
       handlers = nextHandlers;
-      nextHandlers.onStatus('open');
+      void Promise.resolve()
+        .then(() => nextHandlers.onResync?.(new AbortController().signal))
+        .then(() => nextHandlers.onStatus('open'))
+        .catch(() => undefined);
       return { sendMessage: () => true, close: () => undefined };
     };
     render(

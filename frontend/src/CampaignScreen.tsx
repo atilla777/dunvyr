@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 
 import { revokeInvitation, type Campaign, type CampaignMember } from './api';
 import { ChatPanel } from './ChatPanel';
+import { AdventurePanel } from './AdventurePanel';
 import type { ChatMember } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 
@@ -89,6 +90,8 @@ export function CampaignScreen({
         onMemberJoined={handleMemberJoined}
         transportFactory={transportFactory}
       />
+
+      <AdventurePanel campaignId={campaign.id} isOrganizer={isOrganizer} />
 
       {isOrganizer && (
         <>

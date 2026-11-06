@@ -66,6 +66,38 @@ disallow_untyped_decorators = false
 root_packages = ["dunvyr"]
 
 [[tool.importlinter.contracts]]
+name = "Adventures public contract imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.adventures.public"]
+forbidden_modules = [
+    "dunvyr.adventures.application",
+    "dunvyr.adventures.infrastructure",
+    "dunvyr.adventures.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adventures layering: presentation > application > domain"
+type = "layers"
+layers = ["dunvyr.adventures.presentation", "dunvyr.adventures.application", "dunvyr.adventures.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Adventures layering: infrastructure > application > domain"
+type = "layers"
+layers = ["dunvyr.adventures.infrastructure", "dunvyr.adventures.application", "dunvyr.adventures.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Adventures domain imports no outer layers"
+type = "forbidden"
+source_modules = ["dunvyr.adventures.domain"]
+forbidden_modules = ["dunvyr.adventures.application", "dunvyr.adventures.infrastructure", "dunvyr.adventures.presentation", "dunvyr.adventures.public", "dunvyr.campaigns", "dunvyr.identity"]
+
+[[tool.importlinter.contracts]]
+name = "Adventures application imports no adapters"
+type = "forbidden"
+source_modules = ["dunvyr.adventures.application"]
+forbidden_modules = ["dunvyr.adventures.infrastructure", "dunvyr.adventures.presentation"]
+
+[[tool.importlinter.contracts]]
 name = "Domain contexts are mutually independent except public contracts"
 type = "forbidden"
 source_modules = [

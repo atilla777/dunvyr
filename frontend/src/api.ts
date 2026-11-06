@@ -36,6 +36,96 @@ export interface CreateCampaignOptions {
   idempotencyKey?: string;
 }
 
+export interface Adventure {
+  adventure_id: string;
+  fingerprint: string;
+  title: string;
+  description: string;
+}
+
+export interface CatalogAdventure extends Adventure {
+  edition: string;
+}
+
+export type AdventureState =
+  { status: 'waiting'; adventure: null } | { status: 'pinned'; adventure: Adventure };
+
+export class AdventureError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+async function adventureRequest<T>(campaignId: string, suffix: string, body?: object): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/${suffix}`, {
+      credentials: 'same-origin',
+      ...(body === undefined
+        ? {}
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+  } catch {
+    throw new AdventureError(NETWORK_ERROR);
+  }
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    if (response.status === 409 && detail === 'stale_fingerprint') {
+      throw new AdventureError(
+        'Версия приключения изменилась. Обновите каталог и выберите снова.',
+        detail,
+      );
+    }
+    if (response.status === 409 && detail === 'adventure_conflict') {
+      throw new AdventureError(
+        'Приключение уже выбрано другим запросом. Обновите состояние.',
+        detail,
+      );
+    }
+    if (response.status === 429) {
+      const retry = response.headers.get('Retry-After');
+      throw new AdventureError(
+        `Слишком много попыток. Попробуйте позже${retry && /^\d+$/.test(retry) ? ` (через ${retry} сек.)` : ''}.`,
+      );
+    }
+    throw new AdventureError(
+      response.status === 403
+        ? CAMPAIGN_FORBIDDEN
+        : 'Не удалось загрузить или выбрать приключение. Попробуйте ещё раз.',
+    );
+  }
+  return (await response.json()) as T;
+}
+
+export function fetchAdventure(campaignId: string): Promise<AdventureState> {
+  return adventureRequest(campaignId, 'adventure');
+}
+
+export async function fetchAdventureCatalog(campaignId: string): Promise<CatalogAdventure[]> {
+  const result = await adventureRequest<{ adventures: CatalogAdventure[] }>(
+    campaignId,
+    'adventures',
+  );
+  return result.adventures;
+}
+
+export function selectAdventure(
+  campaignId: string,
+  adventure: CatalogAdventure,
+): Promise<AdventureState> {
+  return adventureRequest(campaignId, 'adventure', {
+    adventure_id: adventure.adventure_id,
+    fingerprint: adventure.fingerprint,
+  });
+}
+
 const GENERIC_ERROR = 'Не удалось выполнить запрос. Попробуйте ещё раз.';
 const NETWORK_ERROR = 'Не удалось связаться с сервером. Попробуйте ещё раз.';
 const NICKNAME_ERROR = 'Псевдоним должен содержать от 1 до 32 символов без управляющих символов.';

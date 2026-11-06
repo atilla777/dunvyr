@@ -15,6 +15,19 @@
   box-sizing: border-box;
 }
 
+.adventure {
+  max-width: 100%;
+  text-align: left;
+}
+
+.adventure__version {
+  overflow-wrap: anywhere;
+}
+
+.adventure__item {
+  margin-block: 1rem;
+}
+
 html,
 body {
   min-height: 100%;

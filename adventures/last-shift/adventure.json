@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "id": "last-shift",
+  "title": "Последняя смена",
+  "summary": "Группа прибывает в исследовательский комплекс, чтобы выяснить, куда исчез персонал.",
+  "edition": "1.0",
+  "skills": [
+    {
+      "id": "repair",
+      "name": "Ремонт",
+      "characteristic": "intellect"
+    },
+    {
+      "id": "hacking",
+      "name": "Взлом",
+      "characteristic": "intellect"
+    },
+    {
+      "id": "analysis",
+      "name": "Анализ",
+      "characteristic": "intellect"
+    },
+    {
+      "id": "medicine",
+      "name": "Медицина",
+      "characteristic": "intellect"
+    },
+    {
+      "id": "perception",
+      "name": "Наблюдательность",
+      "characteristic": "intellect"
+    },
+    {
+      "id": "stealth",
+      "name": "Скрытность",
+      "characteristic": "agility"
+    },
+    {
+      "id": "mobility",
+      "name": "Подвижность",
+      "characteristic": "agility"
+    },
+    {
+      "id": "shooting",
+      "name": "Стрельба",
+      "characteristic": "agility"
+    },
+    {
+      "id": "athletics",
+      "name": "Атлетика",
+      "characteristic": "strength"
+    },
+    {
+      "id": "endurance",
+      "name": "Выносливость",
+      "characteristic": "strength"
+    },
+    {
+      "id": "negotiation",
+      "name": "Переговоры",
+      "characteristic": "presence"
+    },
+    {
+      "id": "deception",
+      "name": "Обман",
+      "characteristic": "presence"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "engineer",
+      "name": "Инженер",
+      "characteristics": {
+        "strength": 2,
+        "agility": 2,
+        "intellect": 4,
+        "presence": 1
+      },
+      "skills": {
+        "repair": 3,
+        "hacking": 2
+      }
+    },
+    {
+      "id": "scout",
+      "name": "Разведчик",
+      "characteristics": {
+        "strength": 2,
+        "agility": 4,
+        "intellect": 2,
+        "presence": 1
+      },
+      "skills": {
+        "stealth": 3,
+        "perception": 2
+      }
+    },
+    {
+      "id": "negotiator",
+      "name": "Переговорщик",
+      "characteristics": {
+        "strength": 1,
+        "agility": 2,
+        "intellect": 2,
+        "presence": 4
+      },
+      "skills": {
+        "negotiation": 3,
+        "analysis": 2
+      }
+    }
+  ],
+  "initial_location_id": "airlock",
+  "locations": [
+    {
+      "id": "airlock",
+      "name": "Приёмный шлюз",
+      "illustration": "airlock-image",
+      "public_description": "Холодный приёмный шлюз освещён аварийными полосами. За гермодверью начинается комплекс; персонала не видно.",
+      "objects": [
+        {
+          "id": "terminal",
+          "name": "Терминал",
+          "public_description": "Экран терминала ещё светится.",
+          "hotspot": {
+            "x": 0.08,
+            "y": 0.32,
+            "width": 0.16,
+            "height": 0.4
+          },
+          "visibility": "visible"
+        },
+        {
+          "id": "cabinet",
+          "name": "Шкаф",
+          "public_description": "Металлический шкаф у стены.",
+          "hotspot": {
+            "x": 0.76,
+            "y": 0.25,
+            "width": 0.15,
+            "height": 0.55
+          },
+          "visibility": "visible"
+        },
+        {
+          "id": "door",
+          "name": "Гермодверь",
+          "public_description": "Закрытая гермодверь ведёт в комплекс.",
+          "hotspot": {
+            "x": 0.35,
+            "y": 0.11,
+            "width": 0.3,
+            "height": 0.68
+          },
+          "visibility": "visible"
+        }
+      ],
+      "exits": []
+    }
+  ],
+  "assets": [
+    {
+      "id": "airlock-image",
+      "path": "airlock.png"
+    }
+  ]
+}

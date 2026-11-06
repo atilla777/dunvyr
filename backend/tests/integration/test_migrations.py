@@ -22,6 +22,8 @@ def test_migrations_create_alembic_version_and_business_tables(
         "campaigns_campaigns",
         "campaigns_members",
         "communication_events",
+        "adventures_snapshots",
+        "adventures_resources",
     } <= table_names
 
 
@@ -43,7 +45,7 @@ def test_migration_head_is_recorded(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert version == "0005"
+    assert version == "0006"
 
 
 @pytest.mark.integration

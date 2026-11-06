@@ -42,12 +42,20 @@ beforeEach(() => {
   // override fetch with their own scenario.
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue(
-      jsonResponse({
-        campaign_id: campaign.id,
-        events: [],
-        last_sequence: 0,
-      }),
+    vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        jsonResponse(
+          url.endsWith('/adventure')
+            ? { status: 'waiting', adventure: null }
+            : url.endsWith('/adventures')
+              ? { adventures: [] }
+              : {
+                  campaign_id: campaign.id,
+                  events: [],
+                  last_sequence: 0,
+                },
+        ),
+      ),
     ),
   );
   // jsdom has no real WebSocket; the panel shows the honest offline state.
@@ -127,11 +135,19 @@ describe('CampaignScreen', () => {
   });
 
   it('lets the organizer revoke the invitation link', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({
-        ...campaign,
-        invitation: { active: false, secret: null, path: null },
-      }),
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        jsonResponse(
+          url.endsWith('/adventure')
+            ? { status: 'waiting', adventure: null }
+            : url.endsWith('/adventures')
+              ? { adventures: [] }
+              : {
+                  ...campaign,
+                  invitation: { active: false, secret: null, path: null },
+                },
+        ),
+      ),
     );
     vi.stubGlobal('fetch', fetchMock);
     render(<CampaignScreen campaign={campaign} currentGuestId={CURRENT_GUEST_ID} />);
@@ -150,7 +166,18 @@ describe('CampaignScreen', () => {
   });
 
   it('reports a failed revoke and keeps the link active', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          url.endsWith('/adventure')
+            ? Promise.resolve(jsonResponse({ status: 'waiting', adventure: null }))
+            : url.endsWith('/adventures')
+              ? Promise.resolve(jsonResponse({ adventures: [] }))
+              : Promise.reject(new Error('offline')),
+        ),
+    );
     render(<CampaignScreen campaign={campaign} currentGuestId={CURRENT_GUEST_ID} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Отозвать ссылку' }));

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from dunvyr import __version__
+from dunvyr.adventures.application.service import AdventureReader, AdventureSelector
+from dunvyr.adventures.infrastructure.catalog import LocalCatalog
+from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
+from dunvyr.adventures.presentation.router import router as adventures_router
 from dunvyr.campaigns.application.rate_limit import (
     CampaignRateLimitPolicy,
     CampaignSlidingWindowRateLimiter,
@@ -73,9 +78,28 @@ def create_app(
         policy=CampaignRateLimitPolicy(),
         clock=utc_now,
     )
+    app.state.adventure_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(), clock=utc_now
+    )
+    app.state.adventure_catalog = LocalCatalog(
+        Path(
+            os.environ.get(
+                "DUNVYR_ADVENTURES_ROOT", Path(__file__).resolve().parents[3] / "adventures"
+            )
+        )
+    )
+    app.state.pinned_templates_reader_factory = SqlSnapshotReader
     app.state.identity_service_factory = build_identity_service
     app.state.guest_resolver_factory = build_identity_service
     app.state.campaign_membership_reader_factory = build_campaign_membership_reader
+    app.state.adventure_reader_factory = lambda session: AdventureReader(
+        build_campaign_membership_reader(session), SqlSnapshotReader(session)
+    )
+    app.state.adventure_selector_factory = lambda session: AdventureSelector(
+        build_campaign_membership_reader(session),
+        SqlSnapshotReader(session),
+        app.state.adventure_catalog,
+    )
 
     realtime_hub = RealtimeHub()
     app.state.realtime_hub = realtime_hub
@@ -104,5 +128,6 @@ def create_app(
     app.include_router(health_router)
     app.include_router(identity_router)
     app.include_router(campaigns_router)
+    app.include_router(adventures_router)
     app.include_router(communication_router)
     return app

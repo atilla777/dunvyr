@@ -299,3 +299,25 @@ forbidden_modules = [
     "dunvyr.campaigns",
     "dunvyr.identity",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Characters layering: presentation > application > domain"
+type = "layers"
+layers = ["dunvyr.characters.presentation", "dunvyr.characters.application", "dunvyr.characters.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Characters layering: infrastructure > application > domain"
+type = "layers"
+layers = ["dunvyr.characters.infrastructure", "dunvyr.characters.application", "dunvyr.characters.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Characters domain imports no outer layers"
+type = "forbidden"
+source_modules = ["dunvyr.characters.domain"]
+forbidden_modules = ["dunvyr.characters.application", "dunvyr.characters.infrastructure", "dunvyr.characters.presentation", "dunvyr.adventures", "dunvyr.campaigns", "dunvyr.identity"]
+
+[[tool.importlinter.contracts]]
+name = "Characters application imports no adapters"
+type = "forbidden"
+source_modules = ["dunvyr.characters.application"]
+forbidden_modules = ["dunvyr.characters.infrastructure", "dunvyr.characters.presentation"]

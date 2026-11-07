@@ -35,10 +35,35 @@ test('организатор выбирает приключение, участ
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible({ timeout: 15000 });
     await expect(draft).toHaveValue('Черновик');
     await expect(draft).toBeFocused();
+    await expect(guest.getByLabel('Имя персонажа')).toBeVisible({ timeout: 15000 });
+    await guest.getByLabel('Имя персонажа').fill('Разведчица');
+    await guest.getByLabel('Внешность').fill('Синяя куртка');
+    await guest.getByLabel('Архетип').selectOption('scout');
+    await guest.route('**/api/campaigns/*/character', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({ status: 429, json: { detail: 'rate_limited' } });
+      } else {
+        await route.continue();
+      }
+    });
+    await guest.getByRole('button', { name: 'Создать персонажа' }).click();
+    await expect(guest.getByRole('alert')).toContainText('Слишком много попыток');
+    await expect(guest.getByLabel('Имя персонажа')).toHaveValue('Разведчица');
+    await guest.unroute('**/api/campaigns/*/character');
+    await guest.getByRole('button', { name: 'Создать персонажа' }).click();
+    await expect(guest.getByRole('heading', { name: 'Разведчица' })).toBeVisible();
+    await expect(draft).toHaveValue('Черновик');
+    await expect(page.getByLabel('Имя персонажа')).toBeVisible({ timeout: 15000 });
+    await page.getByLabel('Имя персонажа').fill('Инженер');
+    await page.getByLabel('Внешность').fill('Красный плащ');
+    await page.getByLabel('Архетип').selectOption('engineer');
+    await page.getByRole('button', { name: 'Создать персонажа' }).click();
+    await expect(page.getByRole('heading', { name: 'Инженер', exact: true })).toBeVisible();
     await expect(guest.getByRole('button', { name: /Выбрать/ })).toHaveCount(0);
     await guest.reload();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
     await expect(guest.getByText('Чат на связи')).toBeVisible();
+    await expect(guest.getByRole('heading', { name: 'Разведчица' })).toBeVisible();
   } finally {
     await participant.close();
   }

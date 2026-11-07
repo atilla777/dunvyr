@@ -392,3 +392,68 @@ export async function revokeInvitation(campaignId: string): Promise<Campaign> {
   }
   return (await response.json()) as Campaign;
 }
+
+export interface Character {
+  id: string;
+  name: string;
+  appearance: string;
+  archetype_id: string;
+  archetype_name: string;
+  characteristics: Record<string, number>;
+  skills: { id: string; name: string; value: number }[];
+}
+
+export interface CharacterTemplates {
+  status: 'waiting' | 'ready';
+  archetypes: { id: string; name: string }[];
+}
+
+async function characterRequest<T>(campaignId: string, suffix: string, body?: object): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/${suffix}`, {
+      credentials: 'same-origin',
+      ...(body === undefined
+        ? {}
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+  } catch {
+    throw new ApiError(NETWORK_ERROR);
+  }
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    const message =
+      response.status === 422
+        ? 'Проверьте имя, внешность и архетип.'
+        : response.status === 429
+          ? 'Слишком много попыток. Попробуйте позже.'
+          : detail === 'character_conflict'
+            ? 'Персонаж уже создан. Обновите страницу.'
+            : detail === 'adventure_required'
+              ? 'Дождитесь выбора приключения.'
+              : response.status === 403
+                ? CAMPAIGN_FORBIDDEN
+                : GENERIC_ERROR;
+    throw new ApiError(message, response.status);
+  }
+  return (await response.json()) as T;
+}
+
+export function fetchCharacter(campaignId: string): Promise<Character | null> {
+  return characterRequest(campaignId, 'character');
+}
+export function fetchCharacterTemplates(campaignId: string): Promise<CharacterTemplates> {
+  return characterRequest(campaignId, 'character-templates');
+}
+export function createCharacter(
+  campaignId: string,
+  name: string,
+  appearance: string,
+  archetypeId: string,
+): Promise<Character> {
+  return characterRequest(campaignId, 'character', { name, appearance, archetype_id: archetypeId });
+}

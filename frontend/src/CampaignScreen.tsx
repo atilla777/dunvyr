@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { revokeInvitation, type Campaign, type CampaignMember } from './api';
 import { ChatPanel } from './ChatPanel';
 import { AdventurePanel } from './AdventurePanel';
+import { CharacterPanel } from './CharacterPanel';
 import type { ChatMember } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 
@@ -92,6 +93,7 @@ export function CampaignScreen({
       />
 
       <AdventurePanel campaignId={campaign.id} isOrganizer={isOrganizer} />
+      <CharacterPanel campaignId={campaign.id} />
 
       {isOrganizer && (
         <>

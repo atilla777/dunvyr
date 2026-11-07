@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // E2E runs against real servers on loopback only. Default ports differ from the
 // `make dev` defaults (8000/5173) so a parallel dev session cannot collide.
@@ -18,6 +21,8 @@ function readPort(name: string, fallback: number): number {
 const backendPort = readPort('DUNVYR_E2E_BACKEND_PORT', 8100);
 const frontendPort = readPort('DUNVYR_E2E_FRONTEND_PORT', 5273);
 const frontendURL = `http://${LOOPBACK}:${frontendPort}`;
+const databaseDirectory = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'dunvyr-e2e-'));
+process.on('exit', () => rmSync(databaseDirectory, { recursive: true, force: true }));
 
 export default defineConfig({
   testDir: './e2e',
@@ -46,15 +51,12 @@ export default defineConfig({
   ],
   webServer: [
     {
-      // Isolated in-memory SQLite: E2E must not create backend/dunvyr.db.
-      // A named shared-cache memory database keeps the data transient while
-      // allowing the two guest browser contexts to use separate pooled
-      // connections (a single StaticPool connection is not thread-safe under
-      // concurrent handshakes/snapshots).
+      // Private transient file: QueuePool avoids the named-memory URL's
+      // SingletonThreadPool eviction of connections still used by worker threads.
       command: `mise exec -- uv run uvicorn --factory dunvyr.main:create_app --host ${LOOPBACK} --port ${backendPort}`,
       cwd: '../backend',
       env: {
-        DUNVYR_DATABASE_URL: 'sqlite+pysqlite:///file:dunvyr-e2e?mode=memory&cache=shared&uri=true',
+        DUNVYR_DATABASE_URL: `sqlite+pysqlite:///${join(databaseDirectory, 'e2e.db')}`,
         DUNVYR_AUTO_MIGRATE: '1',
         DUNVYR_ALLOWED_ORIGINS: `http://${LOOPBACK}:${frontendPort}`,
       },

@@ -22,6 +22,9 @@ from dunvyr.campaigns.application.rate_limit import (
 from dunvyr.campaigns.infrastructure.factory import build_campaign_service
 from dunvyr.campaigns.infrastructure.membership import build_campaign_membership_reader
 from dunvyr.campaigns.presentation.router import router as campaigns_router
+from dunvyr.characters.application.service import CharacterService
+from dunvyr.characters.infrastructure.repository import CharacterRepository
+from dunvyr.characters.presentation.router import router as characters_router
 from dunvyr.communication.application.service import ChatService
 from dunvyr.communication.infrastructure.campaign_events import (
     build_campaign_member_joined_publisher,
@@ -81,6 +84,9 @@ def create_app(
     app.state.adventure_rate_limiter = CampaignSlidingWindowRateLimiter(
         policy=CampaignRateLimitPolicy(), clock=utc_now
     )
+    app.state.character_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(), clock=utc_now
+    )
     app.state.adventure_catalog = LocalCatalog(
         Path(
             os.environ.get(
@@ -92,6 +98,11 @@ def create_app(
     app.state.identity_service_factory = build_identity_service
     app.state.guest_resolver_factory = build_identity_service
     app.state.campaign_membership_reader_factory = build_campaign_membership_reader
+    app.state.character_service_factory = lambda session: CharacterService(
+        build_campaign_membership_reader(session),
+        SqlSnapshotReader(session),
+        CharacterRepository(session),
+    )
     app.state.adventure_reader_factory = lambda session: AdventureReader(
         build_campaign_membership_reader(session), SqlSnapshotReader(session)
     )
@@ -129,5 +140,6 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(campaigns_router)
     app.include_router(adventures_router)
+    app.include_router(characters_router)
     app.include_router(communication_router)
     return app

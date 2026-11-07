@@ -295,7 +295,8 @@ def test_upgrade_old_database_preserves_existing_data(tmp_path: Path) -> None:
 @pytest.mark.integration
 def test_pinned_templates_are_immutable_and_exclude_scenario(migrated_engine: Engine) -> None:
     campaign_id = uuid4()
-    content = """{"skills":[{"id":"repair","name":"Ремонт","characteristic":"intellect"}],
+    content = """{"schema_version":1,
+      "skills":[{"id":"repair","name":"Ремонт","characteristic":"intellect"}],
       "archetypes":[{"id":"engineer","name":"Инженер",
       "characteristics":{"strength":1,"agility":2,"intellect":3,"presence":1},
       "skills":{"repair":2}}],"locations":[{"secret":"SENTINEL"}]}"""
@@ -311,11 +312,39 @@ def test_pinned_templates_are_immutable_and_exclude_scenario(migrated_engine: En
     with Session(migrated_engine) as session:
         templates = SqlSnapshotReader(session).templates(campaign_id)
     assert templates is not None
+    assert templates.creation_rules_id == "archetype-budget-v1"
     assert templates.skills[0].id == "repair"
     assert templates.archetypes[0].characteristics.intellect == 3
     assert "SENTINEL" not in repr(templates)
     with pytest.raises((AttributeError, TypeError)):
         templates.skills[0].id = "changed"  # type: ignore[misc]
+    with pytest.raises((AttributeError, TypeError)):
+        templates.creation_rules_id = "changed"  # type: ignore[misc]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("schema_version", [None, 2, True, "1"])
+def test_templates_fail_closed_for_unsupported_snapshot_schema(
+    migrated_engine: Engine, schema_version: object
+) -> None:
+    import json
+
+    campaign_id = uuid4()
+    content = json.dumps({"schema_version": schema_version, "skills": [], "archetypes": []})
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO adventures_snapshots (campaign_id, adventure_id, fingerprint, "
+                "title, description, content) VALUES "
+                "(:id, 'shift', 'abc', 'title', 'desc', :content)"
+            ),
+            {"id": str(campaign_id), "content": content},
+        )
+    with (
+        Session(migrated_engine) as session,
+        pytest.raises(ValueError, match="unsupported snapshot"),
+    ):
+        SqlSnapshotReader(session).templates(campaign_id)
 
 
 @pytest.mark.integration

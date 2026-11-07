@@ -38,6 +38,7 @@ class ArchetypeTemplate:
 class PinnedTemplates:
     skills: tuple[SkillTemplate, ...]
     archetypes: tuple[ArchetypeTemplate, ...]
+    creation_rules_id: str = "archetype-budget-v1"
 
 
 class PinnedTemplatesReader(Protocol):

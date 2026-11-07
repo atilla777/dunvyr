@@ -9,7 +9,7 @@
 - [Кампании: домен, идемпотентное создание, присоединение по приглашению, членство, отзыв, REST-контракт](backend/campaigns.md)
 - [Communication: чат кампании в реальном времени, единый поток событий, WebSocket, доставка после commit, reconnect-протокол клиента](backend/communication.md)
 - [Локальное приключение и закреплённая версия кампании](backend/adventures.md) — кандидат dunvyr-kye.1, интеграция ожидается
-- [Персонаж участника кампании](backend/characters.md) — кандидат dunvyr-kye.2, интеграция ожидается
+- [Персонаж участника кампании](backend/characters.md) — кандидат dunvyr-kye.3, интеграция ожидается
 - [Frontend-скелет: toolchain, минимальная страница, dev-сервер, проверки](frontend/skeleton.md)
 - [Командный интерфейс: Makefile, make dev, git hooks, E2E, CI, изоляция прогонов](tooling/commands.md)
 

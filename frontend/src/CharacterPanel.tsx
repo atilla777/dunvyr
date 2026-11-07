@@ -4,8 +4,26 @@ import {
   fetchCharacter,
   fetchCharacterTemplates,
   type Character,
+  type CharacterAllocation,
+  type CharacteristicId,
+  type ArchetypeTemplate,
   type CharacterTemplates,
 } from './api';
+
+const characteristicNames: Record<CharacteristicId, string> = {
+  strength: 'Сила',
+  agility: 'Ловкость',
+  intellect: 'Интеллект',
+  presence: 'Влияние',
+};
+const characteristicIds = Object.keys(characteristicNames) as CharacteristicId[];
+
+function initialAllocation(archetype: ArchetypeTemplate): CharacterAllocation {
+  return {
+    characteristics: { ...archetype.characteristics },
+    skills: Object.fromEntries(archetype.skills.map((skill) => [skill.skill_id, skill.value])),
+  };
+}
 
 export function CharacterPanel({ campaignId }: { campaignId: string }) {
   const [character, setCharacter] = useState<Character | null>(null);
@@ -13,6 +31,7 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
   const [name, setName] = useState('');
   const [appearance, setAppearance] = useState('');
   const [archetype, setArchetype] = useState('');
+  const [allocation, setAllocation] = useState<CharacterAllocation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
@@ -38,13 +57,49 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [refresh, templates?.status]);
+  const selected =
+    templates?.status === 'ready'
+      ? templates.archetypes.find((item) => item.id === archetype)
+      : undefined;
+  const rules = templates?.status === 'ready' ? templates.creation_rules : undefined;
+  const spent =
+    allocation && rules
+      ? Object.values(allocation.characteristics).reduce((sum, value) => sum + value, 0) *
+          rules.characteristic_cost +
+        Object.values(allocation.skills).reduce((sum, value) => sum + value, 0) * rules.skill_cost
+      : 0;
+  const overBudget = selected !== undefined && spent > selected.budget;
+  function selectArchetype(id: string) {
+    setArchetype(id);
+    const item =
+      templates?.status === 'ready' ? templates.archetypes.find((a) => a.id === id) : undefined;
+    setAllocation(item ? initialAllocation(item) : null);
+  }
+  function changeValue(
+    kind: 'characteristics' | 'skills',
+    id: string,
+    raw: string,
+    min: number,
+    max: number,
+  ) {
+    if (raw === '') return;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) return;
+    setAllocation(
+      (current) =>
+        current && {
+          ...current,
+          [kind]: { ...current[kind], [id]: value },
+        },
+    );
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !allocation || !selected || overBudget) return;
     setBusy(true);
     setError('');
     try {
-      setCharacter(await createCharacter(campaignId, name, appearance, archetype));
+      setCharacter(await createCharacter(campaignId, name, appearance, archetype, allocation));
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : 'Не удалось создать персонажа.');
     } finally {
@@ -73,7 +128,7 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
           <ul>
             {Object.entries(character.characteristics).map(([key, value]) => (
               <li key={key}>
-                {key}: {value}
+                {characteristicNames[key as CharacteristicId] ?? key}: {value}
               </li>
             ))}
           </ul>
@@ -111,7 +166,7 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
             <select
               value={archetype}
               required
-              onChange={(event) => setArchetype(event.target.value)}
+              onChange={(event) => selectArchetype(event.target.value)}
             >
               <option value="">Выберите архетип</option>
               {templates.archetypes.map((item) => (
@@ -121,7 +176,67 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
               ))}
             </select>
           </label>
-          <button type="submit" disabled={busy}>
+          {selected && allocation && rules && templates.status === 'ready' && (
+            <>
+              <fieldset className="character__allocation">
+                <legend>Характеристики</legend>
+                {characteristicIds.map((id) => {
+                  const baseline = selected.characteristics[id];
+                  const min = Math.max(rules.minimum, baseline - rules.relative_limit);
+                  const max = Math.min(rules.maximum, baseline + rules.relative_limit);
+                  return (
+                    <label key={id}>
+                      {characteristicNames[id]}
+                      <input
+                        type="number"
+                        min={min}
+                        max={max}
+                        step={1}
+                        value={allocation.characteristics[id]}
+                        onChange={(event) =>
+                          changeValue('characteristics', id, event.target.value, min, max)
+                        }
+                      />
+                    </label>
+                  );
+                })}
+              </fieldset>
+              <fieldset className="character__allocation">
+                <legend>Навыки</legend>
+                {templates.skills.map((skill) => {
+                  const baseline =
+                    selected.skills.find((item) => item.skill_id === skill.id)?.value ?? 0;
+                  const min = Math.max(rules.minimum, baseline - rules.relative_limit);
+                  const max = Math.min(rules.maximum, baseline + rules.relative_limit);
+                  return (
+                    <label key={skill.id}>
+                      {skill.name}
+                      <span>Характеристика: {characteristicNames[skill.characteristic]}</span>
+                      <input
+                        aria-label={skill.name}
+                        type="number"
+                        min={min}
+                        max={max}
+                        step={1}
+                        value={allocation.skills[skill.id] ?? 0}
+                        onChange={(event) =>
+                          changeValue('skills', skill.id, event.target.value, min, max)
+                        }
+                      />
+                    </label>
+                  );
+                })}
+              </fieldset>
+              <p>
+                Потрачено: {spent} / Бюджет: {selected.budget} / Осталось: {selected.budget - spent}
+              </p>
+              {overBudget && <p role="alert">Превышен бюджет характеристик и навыков.</p>}
+              <button type="button" onClick={() => setAllocation(initialAllocation(selected))}>
+                Сбросить распределение
+              </button>
+            </>
+          )}
+          <button type="submit" disabled={busy || !allocation || overBudget}>
             {busy ? 'Создаём…' : 'Создать персонажа'}
           </button>
         </form>

@@ -403,10 +403,37 @@ export interface Character {
   skills: { id: string; name: string; value: number }[];
 }
 
-export interface CharacterTemplates {
-  status: 'waiting' | 'ready';
-  archetypes: { id: string; name: string }[];
+export type CharacteristicId = 'strength' | 'agility' | 'intellect' | 'presence';
+export type Characteristics = Record<CharacteristicId, number>;
+
+export interface CharacterAllocation {
+  characteristics: Characteristics;
+  skills: Record<string, number>;
 }
+
+export interface ArchetypeTemplate {
+  id: string;
+  name: string;
+  characteristics: Characteristics;
+  skills: { skill_id: string; value: number }[];
+  budget: number;
+}
+
+export type CharacterTemplates =
+  | { status: 'waiting'; archetypes: [] }
+  | {
+      status: 'ready';
+      archetypes: ArchetypeTemplate[];
+      skills: { id: string; name: string; characteristic: CharacteristicId }[];
+      creation_rules: {
+        id: string;
+        minimum: number;
+        maximum: number;
+        relative_limit: number;
+        characteristic_cost: number;
+        skill_cost: number;
+      };
+    };
 
 async function characterRequest<T>(campaignId: string, suffix: string, body?: object): Promise<T> {
   let response: Response;
@@ -428,7 +455,7 @@ async function characterRequest<T>(campaignId: string, suffix: string, body?: ob
     const detail = await readErrorDetail(response);
     const message =
       response.status === 422
-        ? 'Проверьте имя, внешность и архетип.'
+        ? 'Проверьте имя, внешность, архетип и распределение.'
         : response.status === 429
           ? 'Слишком много попыток. Попробуйте позже.'
           : detail === 'character_conflict'
@@ -454,6 +481,12 @@ export function createCharacter(
   name: string,
   appearance: string,
   archetypeId: string,
+  allocation?: CharacterAllocation,
 ): Promise<Character> {
-  return characterRequest(campaignId, 'character', { name, appearance, archetype_id: archetypeId });
+  return characterRequest(campaignId, 'character', {
+    name,
+    appearance,
+    archetype_id: archetypeId,
+    ...(allocation === undefined ? {} : { allocation }),
+  });
 }

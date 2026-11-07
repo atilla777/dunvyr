@@ -1,4 +1,23 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function loginWithRateLimit(page: Page, nickname: string) {
+  await page.getByLabel('Псевдоним').fill(nickname);
+  while (true) {
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/identity/sessions') && response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Войти' }).click();
+    const response = await responsePromise;
+    if (response.status() !== 429) {
+      expect(response.ok()).toBeTruthy();
+      return;
+    }
+    const seconds = Number(response.headers()['retry-after']);
+    expect(seconds).toBeGreaterThan(0);
+    await page.waitForTimeout((seconds + 1) * 1000);
+  }
+}
 
 test('организатор выбирает приключение, участник видит версию и сохраняет черновик', async ({
   browser,
@@ -64,6 +83,69 @@ test('организатор выбирает приключение, участ
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
     await expect(guest.getByText('Чат на связи')).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Разведчица' })).toBeVisible();
+  } finally {
+    await participant.close();
+  }
+});
+
+test('два настроенных персонажа и чат сохраняются после перезагрузки', async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const settings = test.info().project.use;
+  const participant = await browser.newContext({
+    viewport: settings.viewport,
+    userAgent: settings.userAgent,
+    deviceScaleFactor: settings.deviceScaleFactor,
+    isMobile: settings.isMobile,
+    hasTouch: settings.hasTouch,
+  });
+  try {
+    await page.goto('/');
+    await loginWithRateLimit(page, 'Алиса');
+    await page.getByLabel('Название кампании').fill('Настроенная команда');
+    await page.getByRole('button', { name: 'Создать кампанию' }).click();
+    const invitation = await page.getByRole('link').getAttribute('href');
+    expect(invitation).not.toBeNull();
+    const guest = await participant.newPage();
+    await guest.goto(invitation!);
+    await loginWithRateLimit(guest, 'Боб');
+    await guest.getByRole('button', { name: 'Присоединиться' }).click();
+    await page.getByRole('button', { name: 'Выбрать Последняя смена' }).click();
+    await page.getByLabel('Имя персонажа').fill('Мастер');
+    await page.getByLabel('Внешность').fill('Красный плащ');
+    await page.getByLabel('Архетип').selectOption('engineer');
+    await page.getByLabel('Сила').fill('1');
+    await page.getByLabel('Ловкость').fill('3');
+    await page.getByLabel('Ремонт').fill('2');
+    await page.getByLabel('Скрытность').fill('1');
+    await page.getByRole('button', { name: 'Создать персонажа' }).click();
+    await expect(page.getByRole('heading', { name: 'Мастер' })).toBeVisible();
+    await expect(guest.getByLabel('Имя персонажа')).toBeVisible({ timeout: 15000 });
+    await guest.getByLabel('Имя персонажа').fill('Следопыт');
+    await guest.getByLabel('Внешность').fill('Синяя куртка');
+    await guest.getByLabel('Архетип').selectOption('scout');
+    await guest.getByLabel('Сила').fill('1');
+    await guest.getByLabel('Ловкость').fill('5');
+    await guest.getByLabel('Скрытность').fill('2');
+    await guest.getByLabel('Ремонт').fill('1');
+    await guest.getByRole('button', { name: 'Создать персонажа' }).click();
+    await expect(guest.getByRole('heading', { name: 'Следопыт' })).toBeVisible();
+    await page.getByLabel('Сообщение').fill('Готовы к вылазке');
+    await page.getByRole('button', { name: 'Отправить' }).click();
+    await expect(guest.getByText('Готовы к вылазке')).toBeVisible();
+    await guest.getByLabel('Сообщение').fill('Вперёд');
+    await guest.getByRole('button', { name: 'Отправить' }).click();
+    await expect(page.getByText('Вперёд')).toBeVisible();
+    await page.reload();
+    await guest.reload();
+    await expect(page.getByRole('heading', { name: 'Мастер' })).toBeVisible();
+    await expect(page.getByText('Ловкость: 3')).toBeVisible();
+    await expect(guest.getByRole('heading', { name: 'Следопыт' })).toBeVisible();
+    await expect(guest.getByText('Ловкость: 5')).toBeVisible();
+    await expect(guest.getByText('Готовы к вылазке')).toBeVisible();
+    await expect(page.getByText('Вперёд')).toBeVisible();
   } finally {
     await participant.close();
   }

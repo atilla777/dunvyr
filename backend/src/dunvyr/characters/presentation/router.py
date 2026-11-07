@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy.orm import Session
 
 from dunvyr.characters.application.service import CharacterError, CharacterService
@@ -31,11 +31,34 @@ class SafeRoute(APIRoute):
 router = APIRouter(prefix="/api/campaigns", tags=["characters"], route_class=SafeRoute)
 
 
-class CharacterInput(BaseModel):
+class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class CharacteristicInput(StrictModel):
+    strength: int
+    agility: int
+    intellect: int
+    presence: int
+
+
+class AllocationInput(StrictModel):
+    characteristics: CharacteristicInput
+    skills: dict[str, int]
+
+
+class CharacterInput(StrictModel):
     name: str
     appearance: str
     archetype_id: str
+    allocation: AllocationInput | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_allocation(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "allocation" in value and value["allocation"] is None:
+            raise ValueError("allocation must not be null")
+        return value
 
 
 def actor(request: Request, session: Session) -> UUID:
@@ -95,6 +118,7 @@ def create_character(
             payload.name,
             payload.appearance,
             payload.archetype_id,
+            payload.allocation.model_dump() if payload.allocation is not None else None,
         )
     except CharacterError as error:
         raise HTTPException(status_code=error.status, detail=error.detail) from error

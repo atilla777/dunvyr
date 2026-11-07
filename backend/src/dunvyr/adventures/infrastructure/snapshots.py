@@ -45,6 +45,9 @@ class SqlSnapshotReader:
         if content is None:
             return None
         data = json.loads(content)
+        # This mapping belongs to the stored schema, not the currently installed catalog.
+        if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
+            raise ValueError("unsupported snapshot schema version")
         return PinnedTemplates(
             skills=tuple(SkillTemplate(**skill) for skill in data["skills"]),
             archetypes=tuple(

@@ -59,6 +59,7 @@ function history(events: ChatEvent[] = []): ChatHistory {
     events,
     last_sequence: events.at(-1)?.sequence ?? 0,
     game_session_state: { revision: 0, session: null },
+    presence_state: { epoch: 'epoch', revision: 0, online_guest_ids: [] },
   };
 }
 
@@ -111,6 +112,48 @@ afterEach(() => {
 });
 
 describe('ChatPanel', () => {
+  it('accepts only higher same-epoch live presence and replaces epoch on resync', async () => {
+    const a = { epoch: 'a', revision: 4, online_guest_ids: [CURRENT_GUEST_ID] };
+    const b = { epoch: 'b', revision: 0, online_guest_ids: [] };
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ ...history(), presence_state: a }))
+        .mockResolvedValueOnce(jsonResponse({ ...history(), presence_state: b })),
+    );
+    const onPresenceState = vi.fn();
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+        onPresenceState={onPresenceState}
+      />,
+    );
+    await screen.findByText('Чат на связи');
+    expect(onPresenceState).toHaveBeenLastCalledWith(a);
+    const handlers = transports[0].handlers;
+    act(() => {
+      handlers.onPresence?.({ ...a, revision: 3, online_guest_ids: [] });
+      handlers.onPresence?.({ ...a, revision: 4, online_guest_ids: [] });
+      handlers.onPresence?.({ ...b, revision: 20 });
+    });
+    expect(onPresenceState).toHaveBeenCalledTimes(1);
+    const newer = { ...a, revision: 6, online_guest_ids: [] };
+    act(() => {
+      handlers.onPresence?.(newer);
+      handlers.onPresence?.({ ...a, revision: 5 });
+    });
+    expect(onPresenceState).toHaveBeenLastCalledWith(newer);
+    await act(async () => {
+      await handlers.onResync?.(new AbortController().signal);
+    });
+    expect(onPresenceState).toHaveBeenLastCalledWith(b);
+    act(() => handlers.onPresence?.({ ...a, revision: 100 }));
+    expect(onPresenceState).toHaveBeenCalledTimes(3);
+  });
   it('delivers session state from empty snapshots and live events on reconnect without losing a draft', async () => {
     const initial = { revision: 0, session: null };
     const running = {

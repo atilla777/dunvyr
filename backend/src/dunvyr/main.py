@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,6 +20,7 @@ from dunvyr.adventures.infrastructure.catalog import LocalCatalog
 from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
 from dunvyr.adventures.presentation.router import router as adventures_router
 from dunvyr.campaigns.application.game_sessions import GameSessionService
+from dunvyr.campaigns.application.presence import PresenceRuntime
 from dunvyr.campaigns.application.rate_limit import (
     CampaignRateLimitPolicy,
     CampaignSlidingWindowRateLimiter,
@@ -58,6 +62,11 @@ def create_app(
     *,
     engine: Engine | None = None,
     database_url: str | None = None,
+    presence_ping_interval: float = 10.0,
+    presence_pong_timeout: float = 20.0,
+    presence_lease: float = 30.0,
+    presence_grace: float = 5.0,
+    presence_sweep_interval: float = 1.0,
 ) -> FastAPI:
     """Build the application.
 
@@ -78,7 +87,22 @@ def create_app(
 
     allowed_origins = AllowedOrigins.parse(os.environ.get("DUNVYR_ALLOWED_ORIGINS"))
 
-    app = FastAPI(title="Dunvyr", version=__version__)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async def sweep() -> None:
+            while True:
+                await asyncio.sleep(presence_sweep_interval)
+                app.state.presence.sweep()
+
+        task = asyncio.create_task(sweep())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    app = FastAPI(title="Dunvyr", version=__version__, lifespan=lifespan)
     app.state.engine = resolved_engine
     app.state.session_factory = create_session_factory(resolved_engine)
     app.state.database_url = resolved_url
@@ -122,6 +146,9 @@ def create_app(
 
     realtime_hub = RealtimeHub()
     app.state.realtime_hub = realtime_hub
+    app.state.presence = PresenceRuntime(realtime_hub, lease=presence_lease, grace=presence_grace)
+    app.state.presence_ping_interval = presence_ping_interval
+    app.state.presence_pong_timeout = presence_pong_timeout
     app.state.game_session_rate_limiter = CampaignSlidingWindowRateLimiter(
         policy=CampaignRateLimitPolicy(),
         clock=utc_now,

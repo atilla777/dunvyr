@@ -12,7 +12,7 @@ from sqlalchemy import inspect, text
 
 from dunvyr.main import create_app
 
-from .support import BACKEND_DIR
+from .support import BACKEND_DIR, receive_non_presence
 
 ORIGIN = "http://localhost:5173"
 SESSION_COOKIE = "dunvyr_session"
@@ -69,7 +69,7 @@ def test_chat_message_survives_a_server_restart(
                         }
                     )
                 )
-                event = socket.receive_json()
+                event = receive_non_presence(socket)
                 assert event["type"] == "message"
     finally:
         first_app.state.engine.dispose()

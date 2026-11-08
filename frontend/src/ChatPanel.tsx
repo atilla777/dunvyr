@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { fetchChatHistory } from './api';
 import {
   isGameSessionState,
+  isPresenceState,
   mergeChatEvents,
   type ChatEvent,
   type ChatMember,
   type GameSessionState,
+  type PresenceState,
 } from './chat';
 import {
   createChatTransport,
@@ -23,6 +25,7 @@ interface ChatPanelProps {
   onMemberJoined?: (member: ChatMember) => void;
   onSessionState?: (state: GameSessionState) => void;
   onConnection?: (status: ChatConnectionStatus) => void;
+  onPresenceState?: (state: PresenceState) => void;
   transportFactory?: ChatTransportFactory;
 }
 
@@ -60,6 +63,7 @@ export function ChatPanel({
   onMemberJoined,
   onSessionState,
   onConnection,
+  onPresenceState,
   transportFactory,
 }: ChatPanelProps) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -74,13 +78,16 @@ export function ChatPanel({
   const onMemberJoinedRef = useRef(onMemberJoined);
   const onSessionStateRef = useRef(onSessionState);
   const onConnectionRef = useRef(onConnection);
+  const onPresenceStateRef = useRef(onPresenceState);
+  const presenceRef = useRef<PresenceState | null>(null);
   useEffect(() => {
     onMemberJoinedRef.current = onMemberJoined;
   }, [onMemberJoined]);
   useEffect(() => {
     onSessionStateRef.current = onSessionState;
     onConnectionRef.current = onConnection;
-  }, [onSessionState, onConnection]);
+    onPresenceStateRef.current = onPresenceState;
+  }, [onSessionState, onConnection, onPresenceState]);
 
   /**
    * Merge server events exactly once per `event_id`. The same event can arrive
@@ -114,6 +121,7 @@ export function ChatPanel({
     seenEventIds.current = new Set();
     lastSequence.current = 0;
     hasSnapshot.current = false;
+    presenceRef.current = null;
     const factory = transportFactory ?? createChatTransport;
     const transport = factory(campaignId, {
       onEvent: (event) => {
@@ -129,6 +137,18 @@ export function ChatPanel({
           onConnectionRef.current?.(status);
         }
       },
+      onPresence: (state) => {
+        const current = presenceRef.current;
+        if (
+          active &&
+          current !== null &&
+          current.epoch === state.epoch &&
+          state.revision > current.revision
+        ) {
+          presenceRef.current = state;
+          onPresenceStateRef.current?.(state);
+        }
+      },
       onServerError: (code) => {
         if (active) {
           setError(serverErrorMessage(code));
@@ -139,6 +159,10 @@ export function ChatPanel({
         try {
           const history = await fetchChatHistory(campaignId, after, signal);
           if (!active || signal.aborted) return;
+          if (!isPresenceState(history.presence_state))
+            throw new Error('Invalid presence snapshot');
+          presenceRef.current = history.presence_state;
+          onPresenceStateRef.current?.(history.presence_state);
           if (onSessionStateRef.current) {
             if (!isGameSessionState(history.game_session_state))
               throw new Error('Invalid session snapshot');

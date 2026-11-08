@@ -1,11 +1,12 @@
 import { createIdempotencyKey } from './api';
-import { isChatEvent, type ChatEvent } from './chat';
+import { isChatEvent, isPresenceState, type ChatEvent, type PresenceState } from './chat';
 
 export type ChatConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 export interface ChatTransportHandlers {
   onEvent: (event: ChatEvent) => void;
   onStatus: (status: ChatConnectionStatus) => void;
+  onPresence?: (state: PresenceState) => void;
   onServerError?: (code: string) => void;
   /**
    * Called after a lost connection is re-established, before live delivery
@@ -36,6 +37,7 @@ export const CHAT_RECONNECT_BASE_DELAY_MS = 500;
 export const CHAT_RECONNECT_MAX_DELAY_MS = 8000;
 export const CHAT_ATTEMPT_TIMEOUT_MS = 5000;
 export const CHAT_RECOVERY_TIMEOUT_MS = 30000;
+export const CHAT_SILENCE_TIMEOUT_MS = 25000;
 
 function reconnectDelay(attempt: number): number {
   return Math.min(CHAT_RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), CHAT_RECONNECT_MAX_DELAY_MS);
@@ -76,23 +78,30 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let attemptTimer: ReturnType<typeof setTimeout> | null = null;
   let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let controller: AbortController | null = null;
   let attempts = 0;
   let everOpened = false;
   let ready = false;
   let stopped = false;
-  let buffered: ChatEvent[] = [];
+  let buffered: (
+    { kind: 'chat'; event: ChatEvent } | { kind: 'presence'; state: PresenceState }
+  )[] = [];
 
   function clearTimers(): void {
     if (retryTimer !== null) clearTimeout(retryTimer);
     if (attemptTimer !== null) clearTimeout(attemptTimer);
     if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+    if (silenceTimer !== null) clearTimeout(silenceTimer);
     retryTimer = attemptTimer = deadlineTimer = null;
+    silenceTimer = null;
   }
 
   function discard(): void {
     if (attemptTimer !== null) clearTimeout(attemptTimer);
     attemptTimer = null;
+    if (silenceTimer !== null) clearTimeout(silenceTimer);
+    silenceTimer = null;
     controller?.abort();
     controller = null;
     const old = socket;
@@ -138,12 +147,19 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
     const current = new AbortController();
     controller = current;
     const active = () => !stopped && socket === next && !current.signal.aborted;
+    const armWatchdog = () => {
+      if (silenceTimer !== null) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        if (active()) retry();
+      }, CHAT_SILENCE_TIMEOUT_MS);
+    };
     attemptTimer = setTimeout(() => {
       if (active()) retry();
     }, CHAT_ATTEMPT_TIMEOUT_MS);
 
     next.onopen = () => {
       if (!active()) return;
+      armWatchdog();
       everOpened = true;
       void Promise.resolve()
         .then(() => {
@@ -158,9 +174,10 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
           ready = true;
           const queued = buffered;
           buffered = [];
-          for (const event of queued) {
+          for (const item of queued) {
             if (!active()) return;
-            handlers.onEvent(event);
+            if (item.kind === 'chat') handlers.onEvent(item.event);
+            else handlers.onPresence?.(item.state);
           }
           if (active()) handlers.onStatus('open');
         })
@@ -182,10 +199,37 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
       } catch {
         return;
       }
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'type' in payload &&
+        payload.type === 'ping' &&
+        'nonce' in payload &&
+        typeof payload.nonce === 'string'
+      ) {
+        armWatchdog();
+        next.send(JSON.stringify({ type: 'pong', nonce: payload.nonce }));
+        return;
+      }
       if (isChatEvent(payload)) {
+        armWatchdog();
         if (ready) handlers.onEvent(payload);
-        else buffered.push(payload);
+        else buffered.push({ kind: 'chat', event: payload });
+      } else if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'type' in payload &&
+        payload.type === 'presence_state' &&
+        'campaign_id' in payload &&
+        payload.campaign_id === campaignId &&
+        'presence_state' in payload &&
+        isPresenceState(payload.presence_state)
+      ) {
+        armWatchdog();
+        if (ready) handlers.onPresence?.(payload.presence_state);
+        else buffered.push({ kind: 'presence', state: payload.presence_state });
       } else if (isServerError(payload)) {
+        armWatchdog();
         handlers.onServerError?.(payload.code);
       }
     };

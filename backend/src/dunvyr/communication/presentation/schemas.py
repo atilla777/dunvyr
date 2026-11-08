@@ -55,6 +55,12 @@ class GameSessionStateBody(BaseModel):
     session: GameSessionBody | None
 
 
+class PresenceStateBody(BaseModel):
+    epoch: UUID
+    revision: int
+    online_guest_ids: tuple[UUID, ...]
+
+
 class GameSessionEventResponse(BaseModel):
     type: Literal["game_session_changed"]
     event_id: UUID
@@ -75,6 +81,7 @@ class ChatHistoryResponse(BaseModel):
     events: list[ChatEventResponse]
     last_sequence: int
     game_session_state: GameSessionStateBody
+    presence_state: PresenceStateBody
 
 
 __all__ = [

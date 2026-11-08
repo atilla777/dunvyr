@@ -45,6 +45,27 @@ class CampaignMembershipReader(Protocol):
     ) -> CampaignMemberSnapshot | None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class PresenceState:
+    epoch: UUID
+    revision: int
+    online_guest_ids: tuple[UUID, ...]
+
+
+class PresencePublisher(Protocol):
+    def publish(self, campaign_id: UUID, state: PresenceState) -> None: ...
+
+
+class PresenceObserver(Protocol):
+    def connect(self, campaign_id: UUID, guest_id: UUID, connection_id: UUID) -> None: ...
+    def disconnect(self, connection_id: UUID) -> None: ...
+    def renew(self, connection_id: UUID) -> bool: ...
+
+
+class PresenceReader(Protocol):
+    def read(self, campaign_id: UUID) -> PresenceState: ...
+
+
 class CampaignEventPublisher(Protocol):
     """Post-commit port for campaign facts other contexts deliver in real time.
 
@@ -70,6 +91,10 @@ __all__ = [
     "GameSessionReader",
     "GameSessionSnapshot",
     "GameSessionState",
+    "PresenceObserver",
+    "PresencePublisher",
+    "PresenceReader",
+    "PresenceState",
 ]
 
 

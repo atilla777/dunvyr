@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatEvent } from './chat';
 import {
   CHAT_RECONNECT_ATTEMPTS,
+  CHAT_SILENCE_TIMEOUT_MS,
   createChatTransport,
   type ChatConnectionStatus,
 } from './chatSocket';
@@ -102,6 +103,53 @@ afterEach(() => {
 });
 
 describe('createChatTransport', () => {
+  it('pongs immediately during resync and buffers complete presence until the barrier', async () => {
+    let resolve = () => {};
+    const onPresence = vi.fn();
+    const transport = createChatTransport(CAMPAIGN_ID, {
+      onEvent: vi.fn(),
+      onPresence,
+      onStatus: vi.fn(),
+      onResync: () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    });
+    latestSocket().open();
+    await flushMicrotasks();
+    latestSocket().message({ type: 'ping', nonce: 'server-nonce' });
+    expect(JSON.parse(latestSocket().sent[0])).toEqual({ type: 'pong', nonce: 'server-nonce' });
+    const state = { epoch: 'epoch', revision: 3, online_guest_ids: ['guest'] };
+    latestSocket().message({
+      type: 'presence_state',
+      campaign_id: CAMPAIGN_ID,
+      presence_state: state,
+    });
+    expect(onPresence).not.toHaveBeenCalled();
+    resolve();
+    await flushMicrotasks();
+    expect(onPresence).toHaveBeenCalledWith(state);
+    transport.close();
+  });
+
+  it('reconnects a silent half-open socket and clears the watchdog on close', async () => {
+    const statuses: ChatConnectionStatus[] = [];
+    const transport = createChatTransport(CAMPAIGN_ID, {
+      onEvent: vi.fn(),
+      onStatus: (status) => statuses.push(status),
+      onResync: vi.fn(),
+    });
+    latestSocket().open();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(CHAT_SILENCE_TIMEOUT_MS - 1);
+    expect(statuses.at(-1)).toBe('open');
+    latestSocket().message({ type: 'ping', nonce: 'alive' });
+    await vi.advanceTimersByTimeAsync(CHAT_SILENCE_TIMEOUT_MS);
+    expect(statuses.at(-1)).toBe('reconnecting');
+    transport.close();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
   it('buffers and refuses sends until the first snapshot completes', async () => {
     const statuses: ChatConnectionStatus[] = [];
     const delivered: ChatEvent[] = [];

@@ -7,15 +7,20 @@ import json
 import logging
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from typing import Annotated, Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, WebSocket, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from dunvyr.campaigns.public import CampaignMemberSnapshot, GameSessionReader
+from dunvyr.campaigns.public import (
+    CampaignMemberSnapshot,
+    GameSessionReader,
+    PresenceObserver,
+    PresenceReader,
+)
 from dunvyr.communication.application.errors import (
     ClientMessageConflict,
     EventAppendConflict,
@@ -157,14 +162,52 @@ async def _handle_text(
     return True
 
 
+@dataclass
+class Heartbeat:
+    nonce: str | None = None
+    received: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+async def _heartbeat(
+    app: FastAPI, queue: asyncio.Queue[dict[str, object]], heartbeat: Heartbeat
+) -> None:
+    while True:
+        await asyncio.sleep(app.state.presence_ping_interval)
+        heartbeat.nonce = str(uuid4())
+        heartbeat.received.clear()
+        await queue.put({"type": "ping", "nonce": heartbeat.nonce})
+        await asyncio.wait_for(heartbeat.received.wait(), timeout=app.state.presence_pong_timeout)
+        heartbeat.nonce = None
+
+
 async def _receive_loop(
     websocket: WebSocket,
     app: FastAPI,
     campaign_id: UUID,
     guest_id: UUID,
+    connection_id: UUID,
+    session_token: str | None,
+    heartbeat: Heartbeat,
 ) -> None:
     while True:
         raw = await websocket.receive_text()
+        try:
+            payload = json.loads(raw)
+        except ValueError, TypeError:
+            payload = None
+        if isinstance(payload, dict) and payload.get("type") == "pong":
+            if heartbeat.nonce is not None and payload.get("nonce") == heartbeat.nonce:
+                guest = await run_in_threadpool(_resolve_guest, app, session_token)
+                member = await run_in_threadpool(_find_member, app, campaign_id, guest_id)
+                presence: PresenceObserver = app.state.presence
+                if guest is None or guest.id != guest_id or member is None:
+                    await websocket.close(code=WS_POLICY_VIOLATION)
+                    return
+                if not presence.renew(connection_id):
+                    return
+                heartbeat.nonce = None
+                heartbeat.received.set()
+            continue
         if not await _handle_text(websocket, app, campaign_id, guest_id, raw):
             return
 
@@ -196,16 +239,39 @@ async def campaign_chat(websocket: WebSocket, campaign_id: UUID) -> None:
     hub: RealtimeHub = app.state.realtime_hub
     token, queue = hub.subscribe(campaign_id)
     tasks: list[asyncio.Task[None]] = []
+    connection_id = uuid4()
+    registered = False
+    presence: PresenceObserver = app.state.presence
     try:
         await websocket.accept()
-        tasks.append(asyncio.create_task(_receive_loop(websocket, app, campaign_id, guest.id)))
+        presence.connect(campaign_id, guest.id, connection_id)
+        registered = True
+        heartbeat = Heartbeat()
+        tasks.append(
+            asyncio.create_task(
+                _receive_loop(
+                    websocket,
+                    app,
+                    campaign_id,
+                    guest.id,
+                    connection_id,
+                    websocket.cookies.get(SESSION_COOKIE_NAME),
+                    heartbeat,
+                )
+            )
+        )
         tasks.append(asyncio.create_task(_pump(websocket, queue)))
+        tasks.append(asyncio.create_task(_heartbeat(app, queue, heartbeat)))
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for task in tasks:
             task.cancel()
-            task.add_done_callback(_consume_task)
+        if tasks:
+            with suppress(asyncio.CancelledError):
+                await asyncio.gather(*tasks, return_exceptions=True)
         hub.unsubscribe(campaign_id, token)
+        if registered:
+            presence.disconnect(connection_id)
 
 
 @router.get("/{campaign_id}/chat/events", response_model=ChatHistoryResponse)
@@ -226,12 +292,14 @@ def get_chat_history(
             detail="forbidden",
         ) from error
     reader: GameSessionReader = request.app.state.game_session_reader_factory(session)
+    presence: PresenceReader = request.app.state.presence
     return ChatHistoryResponse.model_validate(
         {
             "campaign_id": campaign_id,
             "events": [event_to_wire(event) for event in history.events],
             "last_sequence": history.last_sequence,
             "game_session_state": asdict(reader.read(campaign_id)),
+            "presence_state": asdict(presence.read(campaign_id)),
         }
     )
 

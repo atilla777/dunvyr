@@ -9,6 +9,7 @@ test('гости видят чат друг друга и сохраняют и�
   browser,
   page,
 }) => {
+  test.setTimeout(90_000);
   const projectUse = test.info().project.use;
   const secondGuestContext = await browser.newContext({
     viewport: projectUse.viewport,
@@ -52,6 +53,24 @@ test('гости видят чат друг друга и сохраняют и�
     await guestB.getByRole('button', { name: 'Отправить' }).click();
     await expect(guestB.getByText('Привет от Боба')).toBeVisible();
     await expect(page.getByText('Привет от Боба')).toBeVisible();
+
+    const bobRoster = page.locator('.campaign__member').filter({ hasText: 'Боб' });
+    await expect(bobRoster).toContainText('В сети');
+    const secondTab = await secondGuestContext.newPage();
+    await secondTab.goto('/');
+    await expect(secondTab.getByText('Чат на связи')).toBeVisible();
+    await guestB.close();
+    // Wait beyond the server grace to prove the remaining tab keeps Bob online.
+    await page.waitForTimeout(6000);
+    await expect(bobRoster).toContainText('В сети');
+    await secondTab.close();
+    await expect(bobRoster).toContainText('Не в сети', { timeout: 12000 });
+    const restored = await secondGuestContext.newPage();
+    await restored.goto('/');
+    await expect(restored.getByText('Чат на связи')).toBeVisible();
+    await expect(bobRoster).toContainText('В сети', { timeout: 12000 });
+    await expect(restored.getByText('Привет от Алисы')).toHaveCount(1);
+    await expect(restored.getByText('Привет от Боба')).toHaveCount(1);
 
     // Reload: the snapshot restores the roster and the whole history once,
     // without duplicates from the previously received live stream.

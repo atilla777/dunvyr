@@ -1,5 +1,6 @@
 """Game meeting authorization and durable stream consistency."""
 
+from contextlib import nullcontext
 from typing import cast
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 
+from tests.integration.support import receive_non_presence
 from tests.integration.test_campaigns import ORIGIN, create_campaign, login
 
 
@@ -89,7 +91,7 @@ def test_auth_origin_key_and_member_read(client):
     campaign = create_campaign(client).json()
     cid = campaign["id"]
     path = f"/api/campaigns/{cid}/game-session"
-    with TestClient(client.app) as other:
+    with nullcontext(TestClient(client.app)) as other:
         assert other.get(path).status_code == 403
         login(other, "Другой")
         assert other.get(path).status_code == 403
@@ -128,7 +130,7 @@ def test_live_delivery_and_delivery_failure_recovers_history(client, monkeypatch
         f"/api/campaigns/{cid}/chat", headers={"Origin": ORIGIN}
     ) as socket:
         result = command(client, cid)
-        event = socket.receive_json()
+        event = receive_non_presence(socket)
     assert event["type"] == "game_session_changed"
     assert event["game_session_state"]["revision"] == result.json()["revision"]
 
@@ -230,7 +232,7 @@ def test_start_is_organizer_only_and_records_one_event(client: TestClient) -> No
     path = f"/api/campaigns/{campaign_id}/game-session/start"
 
     # Use another cookie jar for the player, not the organizer's session.
-    with TestClient(client.app) as player:
+    with nullcontext(TestClient(client.app)) as player:
         login(player, "Борис")
         joined = player.post(
             "/api/campaigns/join", json={"secret": secret}, headers={"Origin": ORIGIN}
@@ -293,7 +295,7 @@ def test_player_cannot_transition_or_replay_organizer_commands(client):
     key = str(uuid4())
     started = command(client, cid, key=key).json()
     sid = started["session"]["id"]
-    with TestClient(client.app) as player:
+    with nullcontext(TestClient(client.app)) as player:
         login(player, "Борис")
         assert (
             player.post(

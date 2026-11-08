@@ -6,7 +6,7 @@ import { AdventurePanel } from './AdventurePanel';
 import { CharacterPanel } from './CharacterPanel';
 import { SceneViewer } from './SceneViewer';
 import { LocationMap } from './LocationMap';
-import type { ChatMember } from './chat';
+import type { ChatMember, PresenceState } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 import type { ChatConnectionStatus } from './chatSocket';
 import { GameSessionPanel } from './GameSessionPanel';
@@ -40,6 +40,7 @@ export function CampaignScreen({
   const [revokeStatus, setRevokeStatus] = useState<'idle' | 'revoking' | 'failed'>('idle');
   const [members, setMembers] = useState(campaign.members ?? []);
   const [connection, setConnection] = useState<ChatConnectionStatus>('connecting');
+  const [presence, setPresence] = useState<PresenceState | null>(null);
   const gameSession = useGameSession(campaign.id);
   const handleMemberJoined = useCallback((member: ChatMember) => {
     const nextMember = toCampaignMember(member);
@@ -104,6 +105,7 @@ export function CampaignScreen({
           onMemberJoined={handleMemberJoined}
           onSessionState={gameSession.accept}
           onConnection={setConnection}
+          onPresenceState={setPresence}
           transportFactory={transportFactory}
         />
       </div>
@@ -169,6 +171,14 @@ export function CampaignScreen({
             {member.guest_id === currentGuestId && (
               <span className="campaign__member-self"> (вы)</span>
             )}
+            <span className="campaign__member-presence">
+              {' — '}
+              {connection !== 'open' || presence === null
+                ? 'Статус неизвестен'
+                : presence.online_guest_ids.includes(member.guest_id)
+                  ? 'В сети'
+                  : 'Не в сети'}
+            </span>
           </li>
         ))}
       </ul>

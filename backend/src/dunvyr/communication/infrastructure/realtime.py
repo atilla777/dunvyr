@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid4
+
+from dunvyr.campaigns.public import PresenceState
 
 
 @dataclass(slots=True)
@@ -60,6 +62,21 @@ class RealtimeHub:
     def subscriber_count(self, campaign_id: UUID) -> int:
         with self._lock:
             return len(self._subscribers.get(campaign_id, {}))
+
+    def publish(self, campaign_id: UUID, state: PresenceState) -> None:
+        self.broadcast(
+            campaign_id,
+            {
+                "type": "presence_state",
+                "event_id": str(uuid4()),
+                "campaign_id": str(campaign_id),
+                "presence_state": {
+                    "epoch": str(state.epoch),
+                    "revision": state.revision,
+                    "online_guest_ids": [str(guest) for guest in state.online_guest_ids],
+                },
+            },
+        )
 
 
 __all__ = ["RealtimeHub"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -14,6 +15,8 @@ from sqlalchemy.engine import Engine
 from starlette.websockets import WebSocketDisconnect
 
 from dunvyr.communication.infrastructure.repositories import SqlAlchemyChatEventRepository
+
+from .support import receive_non_presence
 
 ORIGIN = "http://localhost:5173"
 SESSION_COOKIE = "dunvyr_session"
@@ -81,7 +84,7 @@ def test_messages_are_broadcast_to_all_connected_members_and_snapshotted(
     bob, bob_token = login(client, nickname="Боб")
     assert join_campaign(client, secret).status_code == 201
 
-    with TestClient(client.app) as bob_client:
+    with nullcontext(TestClient(client.app)) as bob_client:
         use_guest(client, alice_token)
         use_guest(bob_client, bob_token)
 
@@ -96,7 +99,7 @@ def test_messages_are_broadcast_to_all_connected_members_and_snapshotted(
             alice_ws.send_text(message_frame(client_message_id, "Привет, кампания"))
 
             for socket in (alice_ws, bob_ws):
-                event = socket.receive_json()
+                event = receive_non_presence(socket)
                 assert event["type"] == "message"
                 assert event["campaign_id"] == campaign_id
                 assert event["sequence"] == 2
@@ -127,7 +130,7 @@ def test_two_clients_of_one_identity_do_not_duplicate_a_message(
     created = create_campaign(client)
     campaign_id = created.json()["id"]
 
-    with TestClient(client.app) as second_client:
+    with nullcontext(TestClient(client.app)) as second_client:
         use_guest(client, alice_token)
         use_guest(second_client, alice_token)
 
@@ -141,12 +144,12 @@ def test_two_clients_of_one_identity_do_not_duplicate_a_message(
             client_message_id = str(uuid4())
             first_ws.send_text(message_frame(client_message_id, "Один раз"))
 
-            first_event = first_ws.receive_json()
-            second_event = second_ws.receive_json()
+            first_event = receive_non_presence(first_ws)
+            second_event = receive_non_presence(second_ws)
             assert first_event["event_id"] == second_event["event_id"]
 
             second_ws.send_text(message_frame(client_message_id, "Один раз"))
-            ack = second_ws.receive_json()
+            ack = receive_non_presence(second_ws)
             assert ack == {"type": "ack", "event_id": first_event["event_id"]}
 
     assert event_count(migrated_engine, campaign_id, "message") == 1
@@ -195,7 +198,7 @@ def test_handshake_rejects_missing_session_bad_origin_and_non_member(
     use_guest(client, alice_token)
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "Работает"))
-        assert socket.receive_json()["type"] == "message"
+        assert receive_non_presence(socket)["type"] == "message"
 
 
 @pytest.mark.integration
@@ -223,7 +226,7 @@ def test_send_after_membership_loss_is_forbidden_and_not_persisted(
 
         socket.send_text(message_frame(str(uuid4()), "Меня уже нет"))
 
-        error = socket.receive_json()
+        error = receive_non_presence(socket)
         assert error["type"] == "error"
         assert error["code"] == "forbidden"
 
@@ -244,13 +247,13 @@ def test_member_joined_is_delivered_live_and_persisted_in_the_same_stream(
 
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "Добро пожаловать"))
-        message_event = socket.receive_json()
+        message_event = receive_non_presence(socket)
         assert message_event["sequence"] == 1
 
         use_guest(client, bob_token)
         assert join_campaign(client, secret).status_code == 201
 
-        member_event = socket.receive_json()
+        member_event = receive_non_presence(socket)
         assert member_event["type"] == "member_joined"
         assert member_event["sequence"] == 2
         assert member_event["member"]["guest_id"] == bob["id"]
@@ -291,7 +294,7 @@ def test_member_joined_is_broadcast_to_every_connected_member(
             assert join_campaign(client, secret).status_code == 201
 
             for socket in (alice_ws, carol_ws):
-                event = socket.receive_json()
+                event = receive_non_presence(socket)
                 assert event["type"] == "member_joined"
                 assert event["member"]["nickname"] == "Боб"
 
@@ -311,14 +314,15 @@ def test_broadcast_happens_only_after_the_message_is_committed(
     committed_rows: list[int] = []
 
     def recording_broadcast(campaign_id_arg: UUID, payload: dict[str, object]) -> None:
-        committed_rows.append(event_count(migrated_engine, campaign_id, "message"))
+        if payload["type"] == "message":
+            committed_rows.append(event_count(migrated_engine, campaign_id, "message"))
         original_broadcast(campaign_id_arg, payload)
 
     monkeypatch.setattr(hub, "broadcast", recording_broadcast)
 
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "После коммита"))
-        assert socket.receive_json()["type"] == "message"
+        assert receive_non_presence(socket)["type"] == "message"
 
     assert committed_rows == [1]
 
@@ -347,11 +351,11 @@ def test_persist_failure_never_broadcasts_and_stores_nothing(
 
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "persist failure"))
-        error = socket.receive_json()
+        error = receive_non_presence(socket)
         assert error["type"] == "error"
         assert error["code"] == "internal"
 
-    assert broadcasts == []
+    assert [frame for frame in broadcasts if frame["type"] != "presence_state"] == []
     assert event_count(migrated_engine, campaign_id) == 0
 
 
@@ -377,7 +381,7 @@ def test_delivery_failure_after_commit_keeps_the_message_saved(
 
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "Сохранится несмотря ни на что"))
-        error = socket.receive_json()
+        error = receive_non_presence(socket)
         assert error["type"] == "error"
         assert error["code"] == "delivery_failed"
 
@@ -444,10 +448,10 @@ def test_chat_operations_never_write_campaigns_or_identity_tables(
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         client_message_id = str(uuid4())
         socket.send_text(message_frame(client_message_id, "чат не трогает чужие таблицы"))
-        delivered = socket.receive_json()
+        delivered = receive_non_presence(socket)
         assert delivered["type"] == "message"
         socket.send_text(message_frame(client_message_id, "чат не трогает чужие таблицы"))
-        replay = socket.receive_json()
+        replay = receive_non_presence(socket)
         assert replay["type"] == "ack"
 
     snapshot = client.get(f"/api/campaigns/{campaign_id}/chat/events")

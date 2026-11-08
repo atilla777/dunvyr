@@ -8,6 +8,7 @@ live stream, with no duplicate or missing events.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from typing import cast
 from uuid import uuid4
 
@@ -15,6 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+
+from .support import receive_non_presence
 
 ORIGIN = "http://localhost:5173"
 SESSION_COOKIE = "dunvyr_session"
@@ -94,7 +97,7 @@ def test_reconnect_snapshot_recovers_the_gap_without_duplicates_or_loss(
     initial = snapshot(client, campaign_id)["events"]
     assert [event["sequence"] for event in initial] == [1]
 
-    with TestClient(client.app) as bob_client:
+    with nullcontext(TestClient(client.app)) as bob_client:
         use_guest(client, alice_token)
         use_guest(bob_client, bob_token)
         with bob_client.websocket_connect(
@@ -107,18 +110,18 @@ def test_reconnect_snapshot_recovers_the_gap_without_duplicates_or_loss(
                 headers={"origin": ORIGIN},
             ) as alice_ws:
                 alice_ws.send_text(message_frame(str(uuid4()), "До разрыва"))
-                seen.append(alice_ws.receive_json())
-                assert bob_ws.receive_json()["event_id"] == seen[-1]["event_id"]
+                seen.append(receive_non_presence(alice_ws))
+                assert receive_non_presence(bob_ws)["event_id"] == seen[-1]["event_id"]
 
             # Alice is offline now. Bob keeps playing.
             missed: list[dict[str, object]] = []
             bob_ws.send_text(message_frame(str(uuid4()), "Пока Алиса офлайн"))
-            missed.append(bob_ws.receive_json())
+            missed.append(receive_non_presence(bob_ws))
 
             carol, carol_token = login(client, nickname="Кэрол")
             use_guest(client, carol_token)
             assert join_campaign(client, secret).status_code == 201
-            missed.append(bob_ws.receive_json())
+            missed.append(receive_non_presence(bob_ws))
 
             assert [event["sequence"] for event in missed] == [3, 4]
             joined = missed[1]
@@ -148,8 +151,8 @@ def test_reconnect_snapshot_recovers_the_gap_without_duplicates_or_loss(
                 headers={"origin": ORIGIN},
             ) as resumed_ws:
                 bob_ws.send_text(message_frame(str(uuid4()), "После восстановления"))
-                after_event = resumed_ws.receive_json()
-                assert bob_ws.receive_json()["event_id"] == after_event["event_id"]
+                after_event = receive_non_presence(resumed_ws)
+                assert receive_non_presence(bob_ws)["event_id"] == after_event["event_id"]
                 assert after_event["sequence"] == 5
                 assert after_event["event_id"] not in merged
 
@@ -169,7 +172,7 @@ def test_repeated_snapshot_for_the_same_cursor_does_not_duplicate_the_stream(
 
     with client.websocket_connect(chat_url(campaign_id), headers={"origin": ORIGIN}) as socket:
         socket.send_text(message_frame(str(uuid4()), "Единственное сообщение"))
-        live = socket.receive_json()
+        live = receive_non_presence(socket)
         assert live["sequence"] == 1
 
     first = snapshot(client, campaign_id, after=0)
@@ -198,7 +201,7 @@ def test_two_clients_of_one_identity_reconnect_without_duplicate_events(
     created = create_campaign(client)
     campaign_id = created.json()["id"]
 
-    with TestClient(client.app) as second_client:
+    with nullcontext(TestClient(client.app)) as second_client:
         use_guest(client, alice_token)
         use_guest(second_client, alice_token)
 
@@ -212,12 +215,12 @@ def test_two_clients_of_one_identity_reconnect_without_duplicate_events(
             ) as first_ws:
                 client_message_id = str(uuid4())
                 first_ws.send_text(message_frame(client_message_id, "Один раз"))
-                original = first_ws.receive_json()
-                assert second_ws.receive_json()["event_id"] == original["event_id"]
+                original = receive_non_presence(first_ws)
+                assert receive_non_presence(second_ws)["event_id"] == original["event_id"]
 
             # The first client dropped; the second one keeps sending.
             second_ws.send_text(message_frame(str(uuid4()), "Пока первый был офлайн"))
-            missed = second_ws.receive_json()
+            missed = receive_non_presence(second_ws)
             assert missed["sequence"] == 2
 
             use_guest(client, alice_token)
@@ -230,7 +233,7 @@ def test_two_clients_of_one_identity_reconnect_without_duplicate_events(
             ) as resumed:
                 # The same server idempotency key replays instead of duplicating.
                 resumed.send_text(message_frame(client_message_id, "Один раз"))
-                assert resumed.receive_json() == {
+                assert receive_non_presence(resumed) == {
                     "type": "ack",
                     "event_id": original["event_id"],
                 }
@@ -271,7 +274,9 @@ def test_subscribe_precedes_accept_and_failed_accept_unsubscribes(
 
     app = SimpleNamespace(
         state=SimpleNamespace(
-            allowed_origins=SimpleNamespace(contains=lambda _: True), realtime_hub=Hub()
+            allowed_origins=SimpleNamespace(contains=lambda _: True),
+            realtime_hub=Hub(),
+            presence=SimpleNamespace(connect=lambda *args: calls.append("connect")),
         )
     )
     socket = SimpleNamespace(

@@ -53,6 +53,25 @@ export interface ChatHistory {
   events: ChatEvent[];
   last_sequence: number;
   game_session_state: GameSessionState;
+  presence_state: PresenceState;
+}
+
+export interface PresenceState {
+  epoch: string;
+  revision: number;
+  online_guest_ids: string[];
+}
+
+export function isPresenceState(value: unknown): value is PresenceState {
+  return (
+    isRecord(value) &&
+    typeof value.epoch === 'string' &&
+    value.epoch.length > 0 &&
+    Number.isSafeInteger(value.revision) &&
+    (value.revision as number) >= 0 &&
+    Array.isArray(value.online_guest_ids) &&
+    value.online_guest_ids.every((id: unknown) => typeof id === 'string')
+  );
 }
 
 export function isGameSessionState(value: unknown): value is GameSessionState {

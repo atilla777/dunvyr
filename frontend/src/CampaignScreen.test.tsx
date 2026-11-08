@@ -57,6 +57,8 @@ beforeEach(() => {
                   campaign_id: campaign.id,
                   events: [],
                   last_sequence: 0,
+                  game_session_state: { revision: 0, session: null },
+                  presence_state: { epoch: 'epoch', revision: 0, online_guest_ids: [] },
                 },
         ),
       ),
@@ -81,6 +83,38 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('CampaignScreen', () => {
+  it('shows definitive presence only while synchronized', async () => {
+    let handlers: ChatTransportHandlers | undefined;
+    const factory: ChatTransportFactory = (_id, next) => {
+      handlers = next;
+      void Promise.resolve()
+        .then(() => next.onResync?.(new AbortController().signal))
+        .then(() => next.onStatus('open'));
+      return { sendMessage: () => true, close: () => undefined };
+    };
+    render(
+      <CampaignScreen
+        campaign={campaign}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('Чат на связи');
+    const bob = screen.getByText('Боб').closest('li');
+    expect(bob).not.toBeNull();
+    expect(bob).toHaveTextContent('Не в сети');
+    act(() =>
+      handlers?.onPresence?.({
+        epoch: 'epoch',
+        revision: 1,
+        online_guest_ids: [campaign.members[1].guest_id],
+      }),
+    );
+    expect(bob).toHaveTextContent('В сети');
+    act(() => handlers?.onStatus('reconnecting'));
+    expect(bob).toHaveTextContent('Статус неизвестен');
+    expect(bob).not.toHaveTextContent('Не в сети');
+  });
   it('shows the absolute invitation link and copies it to the clipboard', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     stubClipboard(writeText);

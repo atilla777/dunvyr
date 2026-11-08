@@ -27,8 +27,8 @@
 
 ## WebSocket-контракт (`communication/presentation/`, путь `/api/campaigns/{campaign_id}/chat`)
 
-- **Handshake — до accept, в порядке**: (1) `Origin` из общего allow-list (`app.state.allowed_origins`; структурный `OriginAllowList` Protocol — тот же список, что для HTTP, отдельного списка нет); отсутствие/неразрешённый → close `4403`; (2) cookie-сессия через `identity.public.GuestResolver`; нет валидной → `4403`; (3) членство через `CampaignMembershipReader`; не-член (в т.ч. несуществующая кампания — без раскрытия существования) → `4403`. Только после всех проверок — `accept` и подписка на hub.
-- **Клиент → сервер** (text frame, JSON): `{"type":"message","client_message_id":"<uuid>","content":"<строка>"}`; любой другой тип/форма → error `invalid_message`. Полей автора в кадре нет и не принимается — автор всегда гость из handshake-сессии (клиентскому полю автора не доверяем).
+- **Handshake — до accept, в порядке**: (1) `Origin` из общего allow-list (`app.state.allowed_origins`; структурный `OriginAllowList` Protocol — тот же список, что для HTTP, отдельного списка нет); отсутствие/неразрешённый → close `4403`; (2) cookie-сессия через `identity.public.GuestResolver`; нет валидной → `4403`; (3) членство через `CampaignMembershipReader`; не-член (в т.ч. несуществующая кампания — без раскрытия существования) → `4403`. После проверок — подписка на hub до `accept` с cleanup при ошибке.
+- **Клиент → сервер** (text frame, JSON): `{"type":"message","client_message_id":"<uuid>","content":"<строка>"}`; также принимается heartbeat `pong` с серверным nonce (см. ниже). Другие типы/формы → error `invalid_message`. Автор всегда гость из handshake-сессии (клиентскому полю автора не доверяем).
 - **Сервер → клиент**: конверт `{"type":"message"|"member_joined","event_id","campaign_id","sequence","occurred_at", …}` с вложенным `message {id, author_id, author_nickname, client_message_id, content, created_at}` или `member {guest_id, nickname, role, joined_at}` (`event_to_wire`, один и тот же формат в WS и REST snapshot); replay → `{"type":"ack","event_id"}` без повторной рассылки; ошибки → `{"type":"error","code","detail"}`.
 - **Коды ошибок WS**: `forbidden` (не-член при отправке; соединение закрывается `4403`), `invalid_message`, `conflict` (client_message_id занят другим автором), `retryable` (sequence не присвоился после повторов), `internal` (сбой persist), `delivery_failed` (сообщение сохранено, но не доставлено — соединение живо, история восстановится snapshot'ом).
 - Отправка не-членом: членство перепроверяется сервером на **каждое** сообщение (снятие доступа между handshake и отправкой → `forbidden`, ничего не сохраняется).
@@ -39,6 +39,14 @@
 
 - `GET /api/campaigns/{campaign_id}/chat/events?after=<sequence>`: без валидной сессии → `403 forbidden`; не-член/несуществующая кампания → `403 forbidden` (без раскрытия существования, как у чат-WS; отличие от campaigns GET, где несуществующая кампания — `404`); успех → `200` `{"campaign_id","events":[<конверты>],"last_sequence"}`.
 - Назначение: первичная история при монтировании и восстановление пропущенных событий после разрыва (cursor `after`); используется клиентским reconnect-протоколом (см. ниже §Фронтенд-срез и reconnect-протокол клиента, u4k.5).
+
+### Presence (кандидат dunvyr-lbp.2)
+
+Локальный кандидат ожидает интеграции и независимого ревью. После успешного accept сервер регистрирует соединение в [campaigns](campaigns.md); невалидный handshake и failed accept presence не регистрируют, teardown освобождает lease. Сервер отправляет `{"type":"ping","nonce":"..."}` с интервалом 10 с и ждёт pong 20 с; клиент отвечает `{"type":"pong","nonce":"..."}`. Только совпавший nonce после повторной проверки сессии и членства продлевает lease; при потере доступа соединение закрывается. Срок lease 30 с, grace 5 с, sweep 1 с; браузерный watchdog при 25 с тишины начинает reconnect.
+
+Member-only snapshot чата независимо от курсора содержит полный `presence_state: {epoch, revision, online_guest_ids}`; live-кадр имеет вид `{"type":"presence_state","campaign_id":"...","presence_state":{...}}`. Это эфемерное состояние, не событие durable потока: оно не занимает chat `sequence` и не сохраняется в историю. Подписка до accept и буферизация live до snapshot образуют барьер; клиент применяет snapshot как основу epoch и только более высокую revision того же epoch из live, отбрасывая запоздавшие кадры. Новый epoch принимается через следующий snapshot после reconnect. Доставка уведомлений best-effort, восстановление — через snapshot, не exactly-once.
+
+Проверки кандидата по сообщению исполнителя: `make lint` и `make test-ci` (`RUN=lbp2impl`, порты 8122/5295) прошли: 260 backend unit, 25 import contracts, 76 frontend, 153 integration, 12 Playwright. `test_presence_domain.py` и `test_presence_runtime.py` покрывают агрегирование и время (домен с наблюдавшимся TDD); `test_presence.py` — вкладки, автономное истечение, nonce, ACL, restart и задержанную публикацию около snapshot; frontend unit и desktop/mobile smoke — потребителей. Это результаты кандидата до независимого ревью и интегрированного gate; реальная LAN-приёмка владельца отдельно.
 
 ### Состояние встречи (кандидат dunvyr-lbp.1)
 
@@ -86,7 +94,7 @@ u4k.5 repair, локальный кандидат, интеграция и не�
 ## Ограничения (ещё не существует)
 
 - Reconnect-окно ограничено 5 повторами / 30 с общим deadline (u4k.5): после исчерпания — честный offline с предложением обновить страницу; бесконечного фонового retry нет. События между разрывом и успешным восстановлением доставляются resync-snapshot'ом по курсору `after`.
-- narration/NPC-типов сообщений нет (только базовые визуальные типы `message`/`member_joined`); журнал, TTS, presence online/offline, исключение участника (kick) — поздние вехи.
+- narration/NPC-типов сообщений нет; журнал, TTS и исключение участника (kick) — поздние вехи. Presence online/offline — локальный кандидат выше, без очереди, автопропуска или AI-управления.
 - **Блокировок речи по состоянию персонажа нет**: персонажей не существует (вехи 3+); когда появятся, проверка возможности говорить должна быть серверной в точке приёма сообщения.
 - Rate limit на WS-отправку сообщений не введён (вне критериев этой задачи; HTTP-лимиты identity/campaigns сохраняются) — кандидат на отдельный ограниченный follow-up.
 - `member_joined` идемпотентен по `(кампания, гость)` — одно событие на вступление; будущий kick + повторный join потребуют пересмотра уникальности. Организатор при создании кампании событие не получает.

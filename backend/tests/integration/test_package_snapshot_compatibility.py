@@ -16,11 +16,19 @@ from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
 
 
 @pytest.mark.integration
-def test_historical_v1_snapshot_scene_is_read_without_catalog(migrated_engine: Engine) -> None:
+def test_historical_v1_snapshot_scene_is_read_without_catalog(
+    migrated_engine: Engine, tmp_path: Path
+) -> None:
     # Canonical v1 snapshot from the package at base da8f878b, gzip -n and base64
     # encoded; never generated from the current package or loader at test time.
     fixture = Path(__file__).resolve().parents[1] / "fixtures" / "last-shift-v1.json.gz.b64"
     content = gzip.decompress(base64.b64decode(fixture.read_text())).decode("utf-8")
+    (tmp_path / "adventure.json").write_text(content)
+    image = Path(__file__).resolve().parents[3] / "adventures" / "last-shift" / "airlock.png"
+    (tmp_path / "airlock.png").write_bytes(image.read_bytes())
+    loaded = load_package(tmp_path)
+    assert loaded.content == content
+    assert loaded.fingerprint == "806422761dd5f4eebc2001ffe0f19965368b7513bb4db935b9c834ab5f75d93a"
     campaign_id = uuid4()
     with Session(migrated_engine) as session:
         reader = SqlSnapshotReader(session)
@@ -32,6 +40,13 @@ def test_historical_v1_snapshot_scene_is_read_without_catalog(migrated_engine: E
         assert scene is not None
         assert scene["name"] == "Приёмный шлюз"
         assert scene["illustration"] == "airlock-image"
+        map_ = reader.map(campaign_id)
+        assert map_ == {
+            "fingerprint": "historical",
+            "current_location_id": "airlock",
+            "locations": [{"id": "airlock", "name": "Приёмный шлюз", "state": "visited"}],
+            "exits": [],
+        }
         objects = cast(list[dict[str, Any]], scene["objects"])
         assert [obj["name"] for obj in objects] == ["Терминал", "Шкаф", "Гермодверь"]
 
@@ -57,6 +72,7 @@ def test_real_package_snapshot_templates(migrated_engine: Engine) -> None:
         )
         templates = reader.templates(campaign_id)
         assert templates is not None
+        assert templates.creation_rules_id == "archetype-budget-v1"
         assert {a.id for a in templates.archetypes} == {"engineer", "scout", "negotiator"}
         assert any(s.id == "repair" and s.characteristic == "intellect" for s in templates.skills)
         assert session.execute(text("SELECT count(*) FROM adventures_resources")).scalar_one() == 1

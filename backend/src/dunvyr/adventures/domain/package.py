@@ -3,6 +3,41 @@
 from typing import Any
 
 
+def project_initial_map(package: dict[str, Any]) -> dict[str, Any]:
+    """Expose explicit knowledge only; unknown targets never carry identity."""
+    initial = package["initial_location_id"]
+    knowledge = package["initial_knowledge"] if package["schema_version"] == 2 else {}
+    known_locations = {initial, *knowledge.get("discovered_location_ids", [])}
+    known_exits = set(knowledge.get("known_exit_ids", []))
+    locations = []
+    exits = []
+    for location in package["locations"]:
+        if location["id"] not in known_locations:
+            continue
+        locations.append(
+            {
+                "id": location["id"],
+                "name": location["name"],
+                "state": "visited" if location["id"] == initial else "discovered",
+            }
+        )
+        labels = {
+            obj["id"]: obj["name"] for obj in location["objects"] if obj["visibility"] == "visible"
+        }
+        for exit_ in location["exits"]:
+            if exit_["id"] in known_exits:
+                exits.append(
+                    {
+                        "source_location_id": location["id"],
+                        "label": labels[exit_["object_id"]],
+                        "target_location_id": exit_["target_location_id"]
+                        if exit_["target_location_id"] in known_locations
+                        else None,
+                    }
+                )
+    return {"current_location_id": initial, "locations": locations, "exits": exits}
+
+
 def project_initial_scene(package: dict[str, Any]) -> dict[str, Any]:
     """Project only public fields from the pinned initial location."""
     locations = [loc for loc in package["locations"] if loc["id"] == package["initial_location_id"]]
@@ -61,3 +96,23 @@ def validate_references(package: dict[str, Any]) -> None:
                 or exit_["object_id"] not in local_objects
             ):
                 raise ValueError(f"invalid exit reference in {location['id']}")
+    if package["schema_version"] == 2:
+        knowledge = package["initial_knowledge"]
+        discovered = knowledge["discovered_location_ids"]
+        known_exits = knowledge["known_exit_ids"]
+        if (
+            len(discovered) != len(set(discovered))
+            or not set(discovered) <= location_ids
+            or package["initial_location_id"] in discovered
+        ):
+            raise ValueError("invalid discovered locations")
+        if len(known_exits) != len(set(known_exits)) or not set(known_exits) <= exit_ids:
+            raise ValueError("invalid known exits")
+        known_rooms = {package["initial_location_id"], *discovered}
+        for location in locations:
+            visible = {obj["id"] for obj in location["objects"] if obj["visibility"] == "visible"}
+            for exit_ in location["exits"]:
+                if exit_["id"] in known_exits and (
+                    location["id"] not in known_rooms or exit_["object_id"] not in visible
+                ):
+                    raise ValueError("known exit has unknown source or hidden label")

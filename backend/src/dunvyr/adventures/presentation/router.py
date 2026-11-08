@@ -119,6 +119,33 @@ def get_scene(
     return {"status": "ready" if scene else "waiting", "scene": scene}
 
 
+@router.get("/{campaign_id}/map")
+def get_map(
+    campaign_id: UUID,
+    request: Request,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, object]:
+    factory: Callable[[Session], AdventureReader] = request.app.state.adventure_reader_factory
+    try:
+        map_ = factory(session).map(campaign_id, guest_id(request, session))
+    except HTTPException as error:
+        error.headers = {**(error.headers or {}), "Cache-Control": "private, no-store"}
+        raise
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403, detail="forbidden", headers={"Cache-Control": "private, no-store"}
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=500,
+            detail="map_unavailable",
+            headers={"Cache-Control": "private, no-store"},
+        ) from error
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"status": "ready" if map_ else "waiting", "map": map_}
+
+
 @router.get("/{campaign_id}/scene/resources/{resource_id}")
 def get_scene_resource(
     campaign_id: UUID,

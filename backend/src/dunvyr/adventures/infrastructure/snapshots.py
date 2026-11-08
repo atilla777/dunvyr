@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from dunvyr.adventures.domain.package import project_initial_scene, validate_references
-from dunvyr.adventures.infrastructure.package_loader import Package
+from dunvyr.adventures.domain.package import project_initial_map, project_initial_scene
+from dunvyr.adventures.infrastructure.package_loader import parse_package
 from dunvyr.adventures.public import (
     ArchetypeTemplate,
     Characteristics,
@@ -33,16 +33,24 @@ class SqlSnapshotReader:
         if content is None:
             return None
         try:
-            data = json.loads(content)
-            if (
-                not isinstance(data, dict)
-                or type(data.get("schema_version")) is not int
-                or data["schema_version"] != 1
-            ):
-                raise ValueError("unsupported snapshot")
-            package = Package.model_validate(data).model_dump()
-            validate_references(package)
+            package = parse_package(json.loads(content)).model_dump()
             return project_initial_scene(package)
+        except (ValueError, KeyError, TypeError, RecursionError) as error:
+            raise ValueError("invalid snapshot") from error
+
+    def map(self, campaign_id: UUID) -> dict[str, object] | None:
+        row = self._session.execute(
+            text(
+                "SELECT content, fingerprint FROM adventures_snapshots "
+                "WHERE campaign_id = :campaign_id"
+            ),
+            {"campaign_id": str(campaign_id)},
+        ).one_or_none()
+        if row is None:
+            return None
+        try:
+            package = parse_package(json.loads(row.content)).model_dump()
+            return {"fingerprint": row.fingerprint, **project_initial_map(package)}
         except (ValueError, KeyError, TypeError, RecursionError) as error:
             raise ValueError("invalid snapshot") from error
 
@@ -79,8 +87,19 @@ class SqlSnapshotReader:
             return None
         data = json.loads(content)
         # This mapping belongs to the stored schema, not the currently installed catalog.
-        if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
+        if (
+            not isinstance(data, dict)
+            or type(data.get("schema_version")) is not int
+            or data["schema_version"] not in (1, 2)
+        ):
             raise ValueError("unsupported snapshot schema version")
+        if data["schema_version"] == 2:
+            try:
+                data = parse_package(data).model_dump()
+            except ValueError as error:
+                raise ValueError(
+                    "unsupported snapshot schema version or invalid snapshot"
+                ) from error
         return PinnedTemplates(
             skills=tuple(SkillTemplate(**skill) for skill in data["skills"]),
             archetypes=tuple(

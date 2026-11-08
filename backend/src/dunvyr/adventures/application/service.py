@@ -10,6 +10,7 @@ from dunvyr.campaigns.public import CampaignMembershipReader
 class SnapshotReader(Protocol):
     def public_snapshot(self, campaign_id: UUID) -> dict[str, str] | None: ...
     def scene(self, campaign_id: UUID) -> dict[str, object] | None: ...
+    def map(self, campaign_id: UUID) -> dict[str, object] | None: ...
     def resource(self, campaign_id: UUID, resource_id: str) -> bytes | None: ...
 
 
@@ -28,6 +29,11 @@ class AdventureReader:
         if self._membership.find_member(campaign_id, guest_id) is None:
             raise PermissionError("forbidden")
         return self._snapshots.scene(campaign_id)
+
+    def map(self, campaign_id: UUID, guest_id: UUID) -> dict[str, object] | None:
+        if self._membership.find_member(campaign_id, guest_id) is None:
+            raise PermissionError("forbidden")
+        return self._snapshots.map(campaign_id)
 
     def resource(self, campaign_id: UUID, guest_id: UUID, resource_id: str) -> bytes | None:
         scene = self.scene(campaign_id, guest_id)

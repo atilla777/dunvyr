@@ -26,6 +26,47 @@ from tests.integration.test_campaigns import create_campaign, login
 
 
 @pytest.mark.integration
+def test_map_membership_waiting_ready_and_corrupt_snapshot(
+    client: TestClient, migrated_engine: Engine
+) -> None:
+    login(client)
+    campaign_id = create_campaign(client).json()["id"]
+    url = f"/api/campaigns/{campaign_id}/map"
+    assert client.get(url).json() == {"status": "waiting", "map": None}
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json={key: item[key] for key in ("adventure_id", "fingerprint")},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    result = client.get(url)
+    assert result.headers["cache-control"] == "private, no-store"
+    assert result.json()["map"]["fingerprint"] == item["fingerprint"]
+    assert result.json()["map"]["current_location_id"] == result.json()["map"]["locations"][0]["id"]
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text("UPDATE adventures_snapshots SET content = :content"),
+            {"content": '{"schema_version":999}'},
+        )
+    corrupt = client.get(url)
+    assert corrupt.json() == {"detail": "map_unavailable"}
+    assert corrupt.headers["cache-control"] == "private, no-store"
+    with migrated_engine.begin() as connection:
+        connection.execute(text("UPDATE adventures_snapshots SET content = '[]'"))
+    assert client.get(url).json() == {"detail": "map_unavailable"}
+    client.cookies.clear()
+    anonymous = client.get(url)
+    assert anonymous.status_code == 403
+    assert anonymous.headers["cache-control"] == "private, no-store"
+    login(client, "Боб")
+    assert client.get(url).status_code == 403
+    assert client.get(url).status_code == 403
+
+
+@pytest.mark.integration
 def test_scene_and_illustration_require_membership_and_pinned_allowlist(client: TestClient) -> None:
     login(client)
     campaign = create_campaign(client).json()
@@ -92,12 +133,20 @@ def test_scene_uses_pinned_version_after_source_removed_and_restart(
     )
     url = f"/api/campaigns/{campaign_id}/scene"
     before = client.get(url).json()
+    map_url = f"/api/campaigns/{campaign_id}/map"
+    map_before = client.get(map_url).json()
+    assert map_before["map"]["fingerprint"] == item["fingerprint"]
+    assert [room["id"] for room in map_before["map"]["locations"]] == ["airlock", "reception"]
     image_url = url + "/resources/" + before["scene"]["illustration"]
     image = client.get(image_url).content
+    package_file = root / "last-shift" / "adventure.json"
+    package_file.write_text("{}")
+    assert client.get(map_url).json() == map_before
     shutil.rmtree(root)
     with TestClient(create_app(engine=migrated_engine)) as restarted:
         restarted.cookies.update(client.cookies)
         assert restarted.get(url).json() == before
+        assert restarted.get(map_url).json() == map_before
         assert restarted.get(image_url).content == image
 
 
@@ -193,6 +242,9 @@ def test_hidden_objects_locations_and_unreferenced_resources_are_not_exposed(
             }
         )
         data["assets"].append({"id": "secret-image", "path": "secret.png"})
+        next(room for room in data["locations"] if room["id"] == "reception")["illustration"] = (
+            "secret-image"
+        )
         connection.execute(
             text("UPDATE adventures_snapshots SET content = :content"),
             {"content": json.dumps(data)},
@@ -218,6 +270,31 @@ def test_hidden_objects_locations_and_unreferenced_resources_are_not_exposed(
         )
     )
     assert client.get(url + "/resources/secret-image").status_code == 404
+    map_url = f"/api/campaigns/{campaign_id}/map"
+    result = client.get(map_url)
+    assert result.status_code == 200
+    for secret in (
+        "secret-object",
+        "SENTINEL",
+        "secret-exit",
+        "secret-location",
+        "secret-image",
+        "service-bay",
+        "vault",
+        "airlock-secret",
+    ):
+        assert secret not in result.text
+    assert result.json()["map"]["exits"][1]["target_location_id"] is None
+    assert client.get(map_url + "/secret-location").status_code == 404
+    assert client.get(f"/api/campaigns/{campaign_id}/locations/secret-location").status_code == 404
+    assert (
+        client.post(
+            map_url,
+            json={"location_id": "secret-location"},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 405
+    )
 
 
 @pytest.mark.integration

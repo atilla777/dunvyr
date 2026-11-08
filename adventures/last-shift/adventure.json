@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "last-shift",
   "title": "Последняя смена",
   "summary": "Группа прибывает в исследовательский комплекс, чтобы выяснить, куда исчез персонал.",
@@ -111,6 +111,10 @@
     }
   ],
   "initial_location_id": "airlock",
+  "initial_knowledge": {
+    "discovered_location_ids": ["reception"],
+    "known_exit_ids": ["airlock-reception", "airlock-unknown"]
+  },
   "locations": [
     {
       "id": "airlock",
@@ -155,6 +159,34 @@
           "visibility": "visible"
         }
       ],
+      "exits": [
+        {"id": "airlock-reception", "object_id": "door", "target_location_id": "reception"},
+        {"id": "airlock-unknown", "object_id": "terminal", "target_location_id": "service-bay"},
+        {"id": "airlock-secret", "object_id": "cabinet", "target_location_id": "vault"}
+      ]
+    },
+    {
+      "id": "reception",
+      "name": "Приёмный зал",
+      "illustration": "airlock-image",
+      "public_description": "За шлюзом виден пустой приёмный зал.",
+      "objects": [],
+      "exits": []
+    },
+    {
+      "id": "service-bay",
+      "name": "Служебный отсек",
+      "illustration": "airlock-image",
+      "public_description": "Скрытый служебный отсек.",
+      "objects": [],
+      "exits": []
+    },
+    {
+      "id": "vault",
+      "name": "Закрытое хранилище",
+      "illustration": "airlock-image",
+      "public_description": "Скрытое хранилище комплекса.",
+      "objects": [],
       "exits": []
     }
   ],

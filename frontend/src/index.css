@@ -59,6 +59,30 @@
   height: 100dvh;
   margin: 0;
 }
+.location-map {
+  min-width: 0;
+  text-align: left;
+}
+.location-map button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.location-map__viewport {
+  overflow: auto;
+  max-width: 100%;
+  max-height: 50vh;
+  touch-action: pan-x pan-y;
+}
+.location-map__mobile {
+  display: none;
+}
+.location-map__dialog {
+  max-width: 100vw;
+  max-height: 100dvh;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+}
 @media (max-width: 700px) {
   .campaign__play {
     display: flex;
@@ -68,6 +92,12 @@
     display: none;
   }
   .scene__mobile {
+    display: block;
+  }
+  .location-map__desktop {
+    display: none;
+  }
+  .location-map__mobile {
     display: block;
   }
 }

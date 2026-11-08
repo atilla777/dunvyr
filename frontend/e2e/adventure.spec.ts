@@ -214,6 +214,62 @@ test('два настроенных персонажа и чат сохраня�
     await loginWithRateLimit(guest, 'Боб');
     await guest.getByRole('button', { name: 'Присоединиться' }).click();
     await page.getByRole('button', { name: 'Выбрать Последняя смена' }).click();
+    await expect(page.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(guest.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible({
+      timeout: 15000,
+    });
+    const draft = guest.getByLabel('Сообщение');
+    await draft.fill('Сохранённый черновик');
+    await draft.focus();
+    if (test.info().project.name === 'smoke-mobile') {
+      const opener = guest.getByRole('button', { name: 'Открыть карту' });
+      await expect(opener).toBeVisible({ timeout: 15000 });
+      await opener.tap();
+      const map = guest.getByRole('dialog', { name: 'Карта группы' });
+      await expect(map.getByText('Приёмный зал — обнаружено')).toBeVisible();
+      await expect(map.getByText(/→ Неизвестная область/)).toBeVisible();
+      const viewport = map.getByLabel('Карта: прокрутка');
+      await map.getByRole('button', { name: 'Увеличить карту' }).tap();
+      expect(await viewport.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+        true,
+      );
+      await viewport.focus();
+      await guest.keyboard.press('ArrowRight');
+      await expect
+        .poll(() => viewport.evaluate((element) => element.scrollLeft))
+        .toBeGreaterThan(0);
+      await viewport.evaluate((element) => {
+        element.scrollLeft = 0;
+      });
+      const bounds = await viewport.boundingBox();
+      expect(bounds).not.toBeNull();
+      const cdp = await participant.newCDPSession(guest);
+      const y = bounds!.y + bounds!.height / 2;
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: bounds!.x + bounds!.width * 0.8, y }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: bounds!.x + bounds!.width * 0.2, y }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect
+        .poll(() => viewport.evaluate((element) => element.scrollLeft))
+        .toBeGreaterThan(0);
+      await cdp.detach();
+      await map.getByRole('button', { name: 'Сбросить масштаб карты' }).tap();
+      await guest.keyboard.press('Escape');
+      await expect(opener).toBeFocused();
+      await expect(draft).toHaveValue('Сохранённый черновик');
+    } else {
+      const map = guest.getByRole('region', { name: 'Карта' });
+      await expect(map.getByText('Приёмный зал — обнаружено')).toBeVisible({ timeout: 15000 });
+      await expect(map.getByText(/→ Неизвестная область/)).toBeVisible();
+      await expect(draft).toBeFocused();
+    }
     await page.getByLabel('Имя персонажа').fill('Мастер');
     await page.getByLabel('Внешность').fill('Красный плащ');
     await page.getByLabel('Архетип').selectOption('engineer');
@@ -241,6 +297,18 @@ test('два настроенных персонажа и чат сохраня�
     await expect(page.getByText('Вперёд')).toBeVisible();
     await page.reload();
     await guest.reload();
+    await expect(guest.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible();
+    if (test.info().project.name === 'smoke-mobile') {
+      await guest.getByRole('button', { name: 'Открыть карту' }).tap();
+      await expect(
+        guest.getByRole('dialog', { name: 'Карта группы' }).getByText('Приёмный зал — обнаружено'),
+      ).toBeVisible();
+      await guest.keyboard.press('Escape');
+    } else {
+      await expect(
+        guest.getByRole('region', { name: 'Карта' }).getByText('Приёмный зал — обнаружено'),
+      ).toBeVisible();
+    }
     await expect(page.getByRole('heading', { name: 'Мастер' })).toBeVisible();
     await expect(page.getByText('Ловкость: 3')).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Следопыт' })).toBeVisible();

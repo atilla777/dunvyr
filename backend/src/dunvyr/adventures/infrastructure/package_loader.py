@@ -108,6 +108,30 @@ class Package(StrictModel):
     assets: list[Asset] = Field(min_length=1, max_length=100)
 
 
+class InitialKnowledge(StrictModel):
+    discovered_location_ids: list[Id] = Field(max_length=100)
+    known_exit_ids: list[Id] = Field(max_length=10000)
+
+
+class PackageV2(Package):
+    schema_version: Annotated[int, Field(ge=2, le=2)]
+    initial_knowledge: InitialKnowledge
+
+
+def parse_package(raw: Any) -> Package:
+    if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int:
+        raise ValueError("unsupported package schema")
+    version = raw["schema_version"]
+    if version == 1:
+        package = Package.model_validate(raw)
+    elif version == 2:
+        package = PackageV2.model_validate(raw)
+    else:
+        raise ValueError("unsupported package schema")
+    validate_references(package.model_dump())
+    return package
+
+
 @dataclass(frozen=True)
 class LoadedPackage:
     content: str
@@ -229,8 +253,7 @@ def load_package(root: Path) -> LoadedPackage:
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise PackageError(f"invalid package fields: {exc}") from exc
     try:
-        package = Package.model_validate(raw)
-        validate_references(package.model_dump())
+        package = parse_package(raw)
     except (ValidationError, ValueError) as exc:
         raise PackageError(f"invalid package fields: {exc}") from exc
     resources = {}

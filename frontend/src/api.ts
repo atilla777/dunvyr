@@ -70,6 +70,19 @@ export function fetchScene(campaignId: string): Promise<SceneState> {
   return adventureRequest(campaignId, 'scene');
 }
 
+export interface LocationMapData {
+  fingerprint: string;
+  current_location_id: string;
+  locations: { id: string; name: string; state: 'visited' | 'discovered' }[];
+  exits: { source_location_id: string; label: string; target_location_id: string | null }[];
+}
+
+export type MapState = { status: 'waiting'; map: null } | { status: 'ready'; map: LocationMapData };
+
+export function fetchLocationMap(campaignId: string): Promise<MapState> {
+  return adventureRequest(campaignId, 'map');
+}
+
 export function sceneImageUrl(campaignId: string, id: string): string {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/scene/resources/${encodeURIComponent(id)}`;
 }

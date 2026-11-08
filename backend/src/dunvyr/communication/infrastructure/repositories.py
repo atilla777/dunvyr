@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -15,6 +16,7 @@ from dunvyr.communication.application.errors import EventAppendConflict
 from dunvyr.communication.domain.events import (
     ChatEvent,
     ChatMember,
+    GameSessionChangedEvent,
     MemberJoinedEvent,
     MessageEvent,
 )
@@ -97,13 +99,21 @@ class SqlAlchemyChatEventRepository:
                 client_message_id=str(event.message.client_message_id),
                 content=event.message.content,
             )
-        else:
+        elif isinstance(event, MemberJoinedEvent):
             values.update(
                 kind=MEMBER_JOINED_KIND,
                 member_guest_id=str(event.member.guest_id),
                 member_nickname=event.member.nickname,
                 member_role=event.member.role,
                 member_joined_at=_to_text(event.member.joined_at),
+            )
+        else:
+            from dunvyr.communication.application.wire import event_to_wire
+
+            values.update(
+                kind="game_session_changed",
+                game_session_revision=event.revision,
+                game_session_state=json.dumps(event_to_wire(event)["game_session_state"]),
             )
         try:
             self._session.execute(tables.communication_events.insert().values(**values))
@@ -153,6 +163,20 @@ class SqlAlchemyChatEventRepository:
 
 
 def _to_event(row: RowMapping) -> ChatEvent:
+    if row["kind"] == "game_session_changed":
+        state = json.loads(row["game_session_state"])
+        session = state["session"]
+        return GameSessionChangedEvent(
+            event_id=UUID(row["event_id"]),
+            campaign_id=UUID(row["campaign_id"]),
+            sequence=row["sequence"],
+            occurred_at=_from_text(row["occurred_at"]),
+            revision=state["revision"],
+            session_id=UUID(session["id"]),
+            status=session["status"],
+            started_at=_from_text(session["started_at"]),
+            ended_at=_from_text(session["ended_at"]) if session["ended_at"] else None,
+        )
     if row["kind"] == MESSAGE_KIND:
         return _to_message_event(row)
     return _to_member_event(row)

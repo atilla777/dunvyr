@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dunvyr.communication.domain.events import ChatEvent, MemberJoinedEvent
+from dunvyr.communication.domain.events import ChatEvent, GameSessionChangedEvent, MemberJoinedEvent
 
 
 def event_to_wire(event: ChatEvent) -> dict[str, object]:
@@ -13,6 +13,20 @@ def event_to_wire(event: ChatEvent) -> dict[str, object]:
         "sequence": event.sequence,
         "occurred_at": event.occurred_at.isoformat(),
     }
+    if isinstance(event, GameSessionChangedEvent):
+        return {
+            "type": "game_session_changed",
+            **common,
+            "game_session_state": {
+                "revision": event.revision,
+                "session": {
+                    "id": str(event.session_id),
+                    "status": event.status,
+                    "started_at": event.started_at.isoformat(),
+                    "ended_at": event.ended_at.isoformat() if event.ended_at else None,
+                },
+            },
+        }
     if isinstance(event, MemberJoinedEvent):
         return {
             "type": "member_joined",

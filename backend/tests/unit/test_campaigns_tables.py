@@ -12,7 +12,13 @@ from dunvyr.campaigns.infrastructure import tables
 def test_campaigns_metadata_contains_only_owned_tables() -> None:
     names = set(tables.metadata.tables)
 
-    assert names == {"campaigns_campaigns", "campaigns_members"}
+    assert names == {
+        "campaigns_campaigns",
+        "campaigns_members",
+        "campaigns_game_sessions",
+        "campaigns_session_state",
+        "campaigns_session_receipts",
+    }
     assert all(name.startswith("campaigns_") for name in names)
 
 

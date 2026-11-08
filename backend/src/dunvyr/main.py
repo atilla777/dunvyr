@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +16,15 @@ from dunvyr.adventures.application.service import AdventureReader, AdventureSele
 from dunvyr.adventures.infrastructure.catalog import LocalCatalog
 from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
 from dunvyr.adventures.presentation.router import router as adventures_router
+from dunvyr.campaigns.application.game_sessions import GameSessionService
 from dunvyr.campaigns.application.rate_limit import (
     CampaignRateLimitPolicy,
     CampaignSlidingWindowRateLimiter,
 )
 from dunvyr.campaigns.infrastructure.factory import build_campaign_service
+from dunvyr.campaigns.infrastructure.game_sessions import SqlGameSessionUnitOfWork
 from dunvyr.campaigns.infrastructure.membership import build_campaign_membership_reader
+from dunvyr.campaigns.presentation.game_sessions import router as game_sessions_router
 from dunvyr.campaigns.presentation.router import router as campaigns_router
 from dunvyr.characters.application.service import CharacterService
 from dunvyr.characters.infrastructure.repository import CharacterRepository
@@ -30,6 +34,10 @@ from dunvyr.communication.infrastructure.campaign_events import (
     build_campaign_member_joined_publisher,
 )
 from dunvyr.communication.infrastructure.factory import build_chat_service
+from dunvyr.communication.infrastructure.game_sessions import (
+    GameSessionEventStager,
+    GameSessionNotifier,
+)
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.router import router as communication_router
 from dunvyr.identity.application.rate_limit import RateLimitPolicy, SlidingWindowRateLimiter
@@ -114,6 +122,18 @@ def create_app(
 
     realtime_hub = RealtimeHub()
     app.state.realtime_hub = realtime_hub
+    app.state.game_session_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(),
+        clock=utc_now,
+    )
+    app.state.game_session_reader_factory = SqlGameSessionUnitOfWork
+    app.state.game_session_service_factory = lambda session: GameSessionService(
+        SqlGameSessionUnitOfWork(session),
+        GameSessionEventStager(session),
+        GameSessionNotifier(app.state.session_factory, realtime_hub),
+        utc_now,
+        uuid4,
+    )
 
     def chat_service_factory(session: Session) -> ChatService:
         return build_chat_service(
@@ -139,6 +159,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(identity_router)
     app.include_router(campaigns_router)
+    app.include_router(game_sessions_router)
     app.include_router(adventures_router)
     app.include_router(characters_router)
     app.include_router(communication_router)

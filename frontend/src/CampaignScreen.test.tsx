@@ -132,9 +132,9 @@ describe('CampaignScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Скопировать ссылку' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Не удалось скопировать ссылку. Выделите её вручную.',
-    );
+    expect(
+      await screen.findByText('Не удалось скопировать ссылку. Выделите её вручную.'),
+    ).toHaveAttribute('role', 'alert');
     expect(screen.getByRole('link')).toBeInTheDocument();
   });
 
@@ -186,9 +186,9 @@ describe('CampaignScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Отозвать ссылку' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Не удалось отозвать ссылку. Попробуйте ещё раз.',
-    );
+    expect(
+      await screen.findByText('Не удалось отозвать ссылку. Попробуйте ещё раз.'),
+    ).toHaveAttribute('role', 'alert');
     expect(screen.getByRole('link')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Отозвать ссылку' })).toBeEnabled();
   });

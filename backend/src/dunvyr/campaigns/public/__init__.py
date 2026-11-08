@@ -64,4 +64,47 @@ __all__ = [
     "CampaignMemberSnapshot",
     "CampaignMembershipReader",
     "CampaignSnapshot",
+    "GameSessionChanged",
+    "GameSessionEventStager",
+    "GameSessionNotifier",
+    "GameSessionReader",
+    "GameSessionSnapshot",
+    "GameSessionState",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class GameSessionSnapshot:
+    id: UUID
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class GameSessionState:
+    revision: int
+    session: GameSessionSnapshot | None
+
+
+@dataclass(frozen=True, slots=True)
+class GameSessionChanged:
+    campaign_id: UUID
+    state: GameSessionState
+    occurred_at: datetime
+
+
+class GameSessionReader(Protocol):
+    def read(self, campaign_id: UUID) -> GameSessionState: ...
+
+
+class GameSessionEventStager(Protocol):
+    """Stage only, within the caller's transaction; never commit or deliver."""
+
+    def stage(self, fact: GameSessionChanged) -> UUID: ...
+
+
+class GameSessionNotifier(Protocol):
+    """Deliver an already committed event; failures cannot undo persistence."""
+
+    def notify(self, campaign_id: UUID, event_id: UUID) -> None: ...

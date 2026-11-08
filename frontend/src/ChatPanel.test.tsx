@@ -58,6 +58,7 @@ function history(events: ChatEvent[] = []): ChatHistory {
     campaign_id: CAMPAIGN_ID,
     events,
     last_sequence: events.at(-1)?.sequence ?? 0,
+    game_session_state: { revision: 0, session: null },
   };
 }
 
@@ -110,6 +111,47 @@ afterEach(() => {
 });
 
 describe('ChatPanel', () => {
+  it('delivers session state from empty snapshots and live events on reconnect without losing a draft', async () => {
+    const initial = { revision: 0, session: null };
+    const running = {
+      revision: 1,
+      session: { id: 'session', status: 'running' as const, started_at: 'now', ended_at: null },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ ...history(), game_session_state: initial }))
+      .mockResolvedValueOnce(jsonResponse({ ...history(), game_session_state: running }));
+    vi.stubGlobal('fetch', fetchMock);
+    const onSessionState = vi.fn();
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+        onSessionState={onSessionState}
+      />,
+    );
+    await screen.findByText('Чат на связи');
+    expect(onSessionState).toHaveBeenCalledWith(initial);
+    fireEvent.change(screen.getByLabelText('Сообщение'), { target: { value: 'черновик' } });
+    await act(async () => {
+      await transports[0].handlers.onResync?.(new AbortController().signal);
+    });
+    expect(onSessionState).toHaveBeenCalledWith(running);
+    act(() =>
+      transports[0].handlers.onEvent({
+        type: 'game_session_changed',
+        event_id: 'session-event',
+        campaign_id: CAMPAIGN_ID,
+        sequence: 3,
+        occurred_at: 'now',
+        game_session_state: running,
+      }),
+    );
+    expect(onSessionState).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText('Сообщение')).toHaveValue('черновик');
+  });
   it('loads history and distinguishes own messages from other members', async () => {
     stubHistory([
       messageEvent('e1', 1, CURRENT_GUEST_ID, 'Алиса', 'Моё сообщение'),

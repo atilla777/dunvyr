@@ -40,6 +40,12 @@
 - `GET /api/campaigns/{campaign_id}/chat/events?after=<sequence>`: без валидной сессии → `403 forbidden`; не-член/несуществующая кампания → `403 forbidden` (без раскрытия существования, как у чат-WS; отличие от campaigns GET, где несуществующая кампания — `404`); успех → `200` `{"campaign_id","events":[<конверты>],"last_sequence"}`.
 - Назначение: первичная история при монтировании и восстановление пропущенных событий после разрыва (cursor `after`); используется клиентским reconnect-протоколом (см. ниже §Фронтенд-срез и reconnect-протокол клиента, u4k.5).
 
+### Состояние встречи (кандидат dunvyr-lbp.1)
+
+Локальный кандидат, интеграция и независимое ревью ожидаются. К общим конвертам добавлен `type: "game_session_changed"` с `game_session_state: {revision, session}`; формат состояния и ACL команд — [campaigns](campaigns.md). Тот же поток и sequence используются для live и истории; миграция `0008` добавляет поля состояния/revision и UNIQUE `(campaign_id, game_session_revision)`. Каждый member-only snapshot чата дополнительно возвращает актуальный `game_session_state` независимо от курсора и ограничения последних 200 событий, включая пустую историю. Клиент объединяет REST и live по строго возрастающей revision, поэтому запоздавший ответ или replay не откатывает статус.
+
+Событие встречи сохраняется в общей транзакции вместе с состоянием и receipt, в отличие от отдельного post-commit `member_joined`; notifier после commit перечитывает событие и рассылает его. Сбой staging/commit откатывает все записи без фантомного уведомления, сбой уведомления не отменяет commit; восстановление — через snapshot/reconnect, не гарантия exactly-once доставки. Граница владения и транзакции — [ADR](../../rules/architecture/adr/game-session-transaction.md). Integration-тесты `test_game_session.py` и `test_game_session_persistence.py` покрывают rollback, post-commit recovery, snapshot за пределами 200 событий и restart; результаты gate — в [campaigns](campaigns.md).
+
 ## Доставка строго после commit
 
 - Сообщение: сервис коммитит → presentation рассылает событие в `RealtimeHub`. Ошибка доставки (упавшее соединение) — лог + `delivery_failed` отправителю; **сообщение остаётся сохранённым**, rollback нет.

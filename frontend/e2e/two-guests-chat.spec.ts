@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { loginWithRateLimit } from './login';
 
 // End-to-end reconnect slice: two guest browser contexts meet in one campaign,
 // exchange chat messages in both directions and one participant reloads the
@@ -17,12 +18,12 @@ test('гости видят чат друг друга и сохраняют и�
     hasTouch: projectUse.hasTouch,
   });
 
+  let failed = false;
   try {
     const guestB = await secondGuestContext.newPage();
 
     await page.goto('/');
-    await page.getByLabel('Псевдоним').fill('Алиса');
-    await page.getByRole('button', { name: 'Войти' }).click();
+    await loginWithRateLimit(page, 'Алиса');
     await expect(page.getByText('Вы вошли как Алиса')).toBeVisible();
 
     await page.getByLabel('Название кампании').fill('Ночная смена');
@@ -34,8 +35,7 @@ test('гости видят чат друг друга и сохраняют и�
     expect(invitationUrl).not.toBeNull();
 
     await guestB.goto(invitationUrl ?? '');
-    await guestB.getByLabel('Псевдоним').fill('Боб');
-    await guestB.getByRole('button', { name: 'Войти' }).click();
+    await loginWithRateLimit(guestB, 'Боб');
     await guestB.getByRole('button', { name: 'Присоединиться' }).click();
     await expect(guestB.getByRole('heading', { level: 2, name: 'Ночная смена' })).toBeVisible();
     await expect(guestB.getByText('Чат на связи')).toBeVisible();
@@ -62,7 +62,14 @@ test('гости видят чат друг друга и сохраняют и�
     await expect(page.getByText('Привет от Боба')).toHaveCount(1);
     await expect(page.getByText('Боб присоединился к кампании')).toHaveCount(1);
     await expect(page.getByText('Чат на связи')).toBeVisible();
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await secondGuestContext.close();
+    try {
+      await secondGuestContext.close();
+    } catch (error) {
+      if (!failed) throw error;
+    }
   }
 });

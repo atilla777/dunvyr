@@ -28,6 +28,8 @@ communication_events = sa.Table(
     sa.Column("member_nickname", sa.Text(), nullable=True),
     sa.Column("member_role", sa.Text(), nullable=True),
     sa.Column("member_joined_at", sa.Text(), nullable=True),
+    sa.Column("game_session_revision", sa.Integer()),
+    sa.Column("game_session_state", sa.Text()),
     sa.PrimaryKeyConstraint("campaign_id", "sequence", name="pk_communication_events"),
     sa.UniqueConstraint(
         "campaign_id",
@@ -42,3 +44,10 @@ communication_events = sa.Table(
 )
 
 __all__ = ["communication_events", "metadata"]
+
+sa.Index(
+    "uq_communication_game_session_revision",
+    communication_events.c.campaign_id,
+    communication_events.c.game_session_revision,
+    unique=True,
+)

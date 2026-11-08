@@ -138,7 +138,30 @@ class MemberJoinedEvent:
         )
 
 
-ChatEvent = MessageEvent | MemberJoinedEvent
+@dataclass(frozen=True, slots=True)
+class GameSessionChangedEvent:
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    revision: int
+    session_id: UUID
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+
+    def __post_init__(self) -> None:
+        _validate_envelope(
+            event_id=self.event_id,
+            campaign_id=self.campaign_id,
+            sequence=self.sequence,
+            occurred_at=self.occurred_at,
+        )
+        if self.revision < 1 or self.status not in {"running", "paused", "ended"}:
+            raise InvalidEvent("Invalid session state")
+
+
+ChatEvent = MessageEvent | MemberJoinedEvent | GameSessionChangedEvent
 
 
 __all__ = [

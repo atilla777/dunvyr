@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { fetchChatHistory } from './api';
-import { mergeChatEvents, type ChatEvent, type ChatMember } from './chat';
+import {
+  isGameSessionState,
+  mergeChatEvents,
+  type ChatEvent,
+  type ChatMember,
+  type GameSessionState,
+} from './chat';
 import {
   createChatTransport,
   type ChatConnectionStatus,
@@ -15,6 +21,8 @@ interface ChatPanelProps {
   campaignId: string;
   currentGuestId: string;
   onMemberJoined?: (member: ChatMember) => void;
+  onSessionState?: (state: GameSessionState) => void;
+  onConnection?: (status: ChatConnectionStatus) => void;
   transportFactory?: ChatTransportFactory;
 }
 
@@ -50,6 +58,8 @@ export function ChatPanel({
   campaignId,
   currentGuestId,
   onMemberJoined,
+  onSessionState,
+  onConnection,
   transportFactory,
 }: ChatPanelProps) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -62,10 +72,15 @@ export function ChatPanel({
   const hasSnapshot = useRef(false);
   const transportRef = useRef<ChatTransport | null>(null);
   const onMemberJoinedRef = useRef(onMemberJoined);
-
+  const onSessionStateRef = useRef(onSessionState);
+  const onConnectionRef = useRef(onConnection);
   useEffect(() => {
     onMemberJoinedRef.current = onMemberJoined;
   }, [onMemberJoined]);
+  useEffect(() => {
+    onSessionStateRef.current = onSessionState;
+    onConnectionRef.current = onConnection;
+  }, [onSessionState, onConnection]);
 
   /**
    * Merge server events exactly once per `event_id`. The same event can arrive
@@ -103,12 +118,15 @@ export function ChatPanel({
     const transport = factory(campaignId, {
       onEvent: (event) => {
         if (active) {
+          if (event.type === 'game_session_changed')
+            onSessionStateRef.current?.(event.game_session_state);
           acceptEvents([event], true);
         }
       },
       onStatus: (status) => {
         if (active) {
           setConnection(status);
+          onConnectionRef.current?.(status);
         }
       },
       onServerError: (code) => {
@@ -121,6 +139,11 @@ export function ChatPanel({
         try {
           const history = await fetchChatHistory(campaignId, after, signal);
           if (!active || signal.aborted) return;
+          if (onSessionStateRef.current) {
+            if (!isGameSessionState(history.game_session_state))
+              throw new Error('Invalid session snapshot');
+            onSessionStateRef.current(history.game_session_state);
+          }
           for (const event of history.events) {
             lastSequence.current = Math.max(lastSequence.current, event.sequence);
           }
@@ -198,11 +221,11 @@ export function ChatPanel({
               </span>
               <span className="chat__text">{event.message.content}</span>
             </li>
-          ) : (
+          ) : event.type === 'member_joined' ? (
             <li key={event.event_id} className="chat__system">
               {event.member.nickname} присоединился к кампании
             </li>
-          ),
+          ) : null,
         )}
       </ol>
       {events.length === 0 && historyStatus === 'ready' && (

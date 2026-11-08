@@ -43,8 +43,29 @@ class ChatMemberJoinedEventResponse(BaseModel):
     member: ChatMemberBody
 
 
+class GameSessionBody(BaseModel):
+    id: UUID
+    status: Literal["running", "paused", "ended"]
+    started_at: datetime
+    ended_at: datetime | None
+
+
+class GameSessionStateBody(BaseModel):
+    revision: int
+    session: GameSessionBody | None
+
+
+class GameSessionEventResponse(BaseModel):
+    type: Literal["game_session_changed"]
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    game_session_state: GameSessionStateBody
+
+
 ChatEventResponse = Annotated[
-    ChatMessageEventResponse | ChatMemberJoinedEventResponse,
+    ChatMessageEventResponse | ChatMemberJoinedEventResponse | GameSessionEventResponse,
     Field(discriminator="type"),
 ]
 
@@ -53,6 +74,7 @@ class ChatHistoryResponse(BaseModel):
     campaign_id: UUID
     events: list[ChatEventResponse]
     last_sequence: int
+    game_session_state: GameSessionStateBody
 
 
 __all__ = [

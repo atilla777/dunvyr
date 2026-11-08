@@ -7,14 +7,15 @@ import json
 import logging
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import asdict
 from typing import Annotated, Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, WebSocket, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, WebSocket, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from dunvyr.campaigns.public import CampaignMemberSnapshot
+from dunvyr.campaigns.public import CampaignMemberSnapshot, GameSessionReader
 from dunvyr.communication.application.errors import (
     ClientMessageConflict,
     EventAppendConflict,
@@ -28,6 +29,7 @@ from dunvyr.communication.presentation.config import OriginAllowList
 from dunvyr.communication.presentation.dependencies import get_chat_service, get_current_guest
 from dunvyr.communication.presentation.schemas import ChatHistoryResponse
 from dunvyr.identity.public import SESSION_COOKIE_NAME, GuestResolver, GuestSnapshot
+from dunvyr.infrastructure.db import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,8 @@ def get_chat_history(
     campaign_id: UUID,
     guest: Guest,
     service: Service,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
     after: AfterSequence = None,
 ) -> ChatHistoryResponse:
     """Return the member-only chronological chat stream snapshot."""
@@ -221,11 +225,13 @@ def get_chat_history(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="forbidden",
         ) from error
+    reader: GameSessionReader = request.app.state.game_session_reader_factory(session)
     return ChatHistoryResponse.model_validate(
         {
             "campaign_id": campaign_id,
             "events": [event_to_wire(event) for event in history.events],
             "last_sequence": history.last_sequence,
+            "game_session_state": asdict(reader.read(campaign_id)),
         }
     )
 

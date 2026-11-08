@@ -45,7 +45,7 @@ def test_migration_head_is_recorded(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert version == "0007"
+    assert version == "0008"
 
 
 @pytest.mark.integration
@@ -75,7 +75,13 @@ def test_campaigns_tables_use_owned_prefix_and_database_uniqueness(
         member_primary_key = inspect(connection).get_pk_constraint("campaigns_members")
         member_foreign_keys = inspect(connection).get_foreign_keys("campaigns_members")
 
-    assert campaigns_tables == {"campaigns_campaigns", "campaigns_members"}
+    assert campaigns_tables == {
+        "campaigns_campaigns",
+        "campaigns_members",
+        "campaigns_game_sessions",
+        "campaigns_session_state",
+        "campaigns_session_receipts",
+    }
     assert any(
         constraint["column_names"] == ["invitation_token_hash"] for constraint in campaign_unique
     )

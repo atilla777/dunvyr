@@ -1,23 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-
-async function loginWithRateLimit(page: Page, nickname: string) {
-  await page.getByLabel('Псевдоним').fill(nickname);
-  while (true) {
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/identity/sessions') && response.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: 'Войти' }).click();
-    const response = await responsePromise;
-    if (response.status() !== 429) {
-      expect(response.ok()).toBeTruthy();
-      return;
-    }
-    const seconds = Number(response.headers()['retry-after']);
-    expect(seconds).toBeGreaterThan(0);
-    await page.waitForTimeout((seconds + 1) * 1000);
-  }
-}
+import { expect, test } from '@playwright/test';
+import { loginWithRateLimit } from './login';
 
 test('организатор выбирает приключение, участник видит версию и сохраняет черновик', async ({
   browser,
@@ -31,18 +13,17 @@ test('организатор выбирает приключение, участ
     isMobile: settings.isMobile,
     hasTouch: settings.hasTouch,
   });
+  let failed = false;
   try {
     await page.goto('/');
-    await page.getByLabel('Псевдоним').fill('Организатор');
-    await page.getByRole('button', { name: 'Войти' }).click();
+    await loginWithRateLimit(page, 'Организатор');
     await page.getByLabel('Название кампании').fill('Приключение');
     await page.getByRole('button', { name: 'Создать кампанию' }).click();
     const url = await page.getByRole('link').getAttribute('href');
     expect(url).not.toBeNull();
     const guest = await participant.newPage();
     await guest.goto(url!);
-    await guest.getByLabel('Псевдоним').fill('Участник');
-    await guest.getByRole('button', { name: 'Войти' }).click();
+    await loginWithRateLimit(guest, 'Участник');
     await guest.getByRole('button', { name: 'Присоединиться' }).click();
     await expect(guest.getByText(/Ожидаем выбора/)).toBeVisible();
     await expect(guest.getByText('Чат на связи')).toBeVisible();
@@ -184,8 +165,15 @@ test('организатор выбирает приключение, участ
     await expect(guest.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible();
     await expect(guest.getByText('Чат на связи')).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Разведчица' })).toBeVisible();
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await participant.close();
+    try {
+      await participant.close();
+    } catch (error) {
+      if (!failed) throw error;
+    }
   }
 });
 
@@ -202,6 +190,7 @@ test('два настроенных персонажа и чат сохраня�
     isMobile: settings.isMobile,
     hasTouch: settings.hasTouch,
   });
+  let failed = false;
   try {
     await page.goto('/');
     await loginWithRateLimit(page, 'Алиса');
@@ -315,8 +304,15 @@ test('два настроенных персонажа и чат сохраня�
     await expect(guest.getByText('Ловкость: 5')).toBeVisible();
     await expect(guest.getByText('Готовы к вылазке')).toBeVisible();
     await expect(page.getByText('Вперёд')).toBeVisible();
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await participant.close();
+    try {
+      await participant.close();
+    } catch (error) {
+      if (!failed) throw error;
+    }
   }
 });
 
@@ -325,8 +321,7 @@ test('ошибка загрузки приключения позволяет п
     await route.fulfill({ status: 503, json: { detail: 'unavailable' } });
   });
   await page.goto('/');
-  await page.getByLabel('Псевдоним').fill('Алиса');
-  await page.getByRole('button', { name: 'Войти' }).click();
+  await loginWithRateLimit(page, 'Алиса');
   await page.getByLabel('Название кампании').fill('Ошибка');
   await page.getByRole('button', { name: 'Создать кампанию' }).click();
   await expect(page.getByRole('alert')).toContainText('Не удалось загрузить');

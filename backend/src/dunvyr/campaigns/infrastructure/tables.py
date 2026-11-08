@@ -52,3 +52,38 @@ members = sa.Table(
 )
 
 __all__ = ["campaigns", "members", "metadata"]
+
+game_sessions = sa.Table(
+    "campaigns_game_sessions",
+    metadata,
+    sa.Column("id", sa.Text(), primary_key=True),
+    sa.Column("campaign_id", sa.Text(), sa.ForeignKey("campaigns_campaigns.id"), nullable=False),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.Column("started_at", sa.Text(), nullable=False),
+    sa.Column("ended_at", sa.Text()),
+    sa.CheckConstraint("status IN ('running', 'paused', 'ended')", name="ck_game_session_status"),
+)
+sa.Index(
+    "uq_game_session_active",
+    game_sessions.c.campaign_id,
+    unique=True,
+    sqlite_where=game_sessions.c.status.in_(["running", "paused"]),
+)
+
+session_state = sa.Table(
+    "campaigns_session_state",
+    metadata,
+    sa.Column("campaign_id", sa.Text(), sa.ForeignKey("campaigns_campaigns.id"), primary_key=True),
+    sa.Column("revision", sa.Integer(), nullable=False),
+    sa.Column("session_id", sa.Text(), sa.ForeignKey("campaigns_game_sessions.id")),
+    sa.CheckConstraint("revision >= 0", name="ck_session_revision"),
+)
+session_receipts = sa.Table(
+    "campaigns_session_receipts",
+    metadata,
+    sa.Column("campaign_id", sa.Text(), sa.ForeignKey("campaigns_campaigns.id"), primary_key=True),
+    sa.Column("actor_id", sa.Text(), primary_key=True),
+    sa.Column("key", sa.Text(), primary_key=True),
+    sa.Column("payload", sa.Text(), nullable=False),
+    sa.Column("response", sa.Text(), nullable=False),
+)

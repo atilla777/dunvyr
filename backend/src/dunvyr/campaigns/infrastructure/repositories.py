@@ -60,6 +60,12 @@ class SqlAlchemyCampaignRepository:
                     for member in campaign.members
                 ],
             )
+            self._session.execute(
+                tables.session_state.insert().values(
+                    campaign_id=str(campaign.id),
+                    revision=0,
+                )
+            )
         except IntegrityError as error:
             self._session.rollback()
             raise DuplicateIdempotencyKey from error

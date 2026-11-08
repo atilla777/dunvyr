@@ -8,6 +8,9 @@ import { SceneViewer } from './SceneViewer';
 import { LocationMap } from './LocationMap';
 import type { ChatMember } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
+import type { ChatConnectionStatus } from './chatSocket';
+import { GameSessionPanel } from './GameSessionPanel';
+import { useGameSession } from './useGameSession';
 
 interface CampaignScreenProps {
   campaign: Campaign;
@@ -36,6 +39,8 @@ export function CampaignScreen({
   const [invitation, setInvitation] = useState(campaign.invitation);
   const [revokeStatus, setRevokeStatus] = useState<'idle' | 'revoking' | 'failed'>('idle');
   const [members, setMembers] = useState(campaign.members ?? []);
+  const [connection, setConnection] = useState<ChatConnectionStatus>('connecting');
+  const gameSession = useGameSession(campaign.id);
   const handleMemberJoined = useCallback((member: ChatMember) => {
     const nextMember = toCampaignMember(member);
     if (nextMember === null) {
@@ -86,6 +91,7 @@ export function CampaignScreen({
       <p className="campaign__seats">
         Мест занято: {members.length} из {campaign.max_seats}
       </p>
+      <GameSessionPanel controller={gameSession} organizer={isOrganizer} connection={connection} />
 
       <div className="campaign__play">
         <div>
@@ -96,6 +102,8 @@ export function CampaignScreen({
           campaignId={campaign.id}
           currentGuestId={currentGuestId}
           onMemberJoined={handleMemberJoined}
+          onSessionState={gameSession.accept}
+          onConnection={setConnection}
           transportFactory={transportFactory}
         />
       </div>

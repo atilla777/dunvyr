@@ -3,6 +3,29 @@
 from typing import Any
 
 
+def project_initial_scene(package: dict[str, Any]) -> dict[str, Any]:
+    """Project only public fields from the pinned initial location."""
+    locations = [loc for loc in package["locations"] if loc["id"] == package["initial_location_id"]]
+    if len(locations) != 1:
+        raise ValueError("invalid initial location")
+    location = locations[0]
+    return {
+        "name": location["name"],
+        "description": location["public_description"],
+        "illustration": location["illustration"],
+        "objects": [
+            {
+                "id": obj["id"],
+                "name": obj["name"],
+                "description": obj["public_description"],
+                "hotspot": {key: obj["hotspot"][key] for key in ("x", "y", "width", "height")},
+            }
+            for obj in location["objects"]
+            if obj["visibility"] == "visible"
+        ],
+    }
+
+
 def _unique(items: list[dict[str, Any]], label: str) -> set[str]:
     ids = [item["id"] for item in items]
     if len(ids) != len(set(ids)):

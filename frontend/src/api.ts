@@ -50,6 +50,30 @@ export interface CatalogAdventure extends Adventure {
 export type AdventureState =
   { status: 'waiting'; adventure: null } | { status: 'pinned'; adventure: Adventure };
 
+export interface SceneObject {
+  id: string;
+  name: string;
+  description: string;
+  hotspot: { x: number; y: number; width: number; height: number };
+}
+
+export interface Scene {
+  name: string;
+  description: string;
+  illustration: string;
+  objects: SceneObject[];
+}
+
+export type SceneState = { status: 'waiting'; scene: null } | { status: 'ready'; scene: Scene };
+
+export function fetchScene(campaignId: string): Promise<SceneState> {
+  return adventureRequest(campaignId, 'scene');
+}
+
+export function sceneImageUrl(campaignId: string, id: string): string {
+  return `/api/campaigns/${encodeURIComponent(campaignId)}/scene/resources/${encodeURIComponent(id)}`;
+}
+
 export class AdventureError extends Error {
   constructor(
     message: string,

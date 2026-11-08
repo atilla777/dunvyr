@@ -9,6 +9,8 @@ from dunvyr.campaigns.public import CampaignMembershipReader
 
 class SnapshotReader(Protocol):
     def public_snapshot(self, campaign_id: UUID) -> dict[str, str] | None: ...
+    def scene(self, campaign_id: UUID) -> dict[str, object] | None: ...
+    def resource(self, campaign_id: UUID, resource_id: str) -> bytes | None: ...
 
 
 class AdventureReader:
@@ -21,6 +23,17 @@ class AdventureReader:
             raise PermissionError("forbidden")
         snapshot = self._snapshots.public_snapshot(campaign_id)
         return {"status": "pinned" if snapshot else "waiting", "adventure": snapshot}
+
+    def scene(self, campaign_id: UUID, guest_id: UUID) -> dict[str, object] | None:
+        if self._membership.find_member(campaign_id, guest_id) is None:
+            raise PermissionError("forbidden")
+        return self._snapshots.scene(campaign_id)
+
+    def resource(self, campaign_id: UUID, guest_id: UUID, resource_id: str) -> bytes | None:
+        scene = self.scene(campaign_id, guest_id)
+        if scene is None or scene["illustration"] != resource_id:
+            return None
+        return self._snapshots.resource(campaign_id, resource_id)
 
 
 class Package(Protocol):

@@ -26,6 +26,201 @@ from tests.integration.test_campaigns import create_campaign, login
 
 
 @pytest.mark.integration
+def test_scene_and_illustration_require_membership_and_pinned_allowlist(client: TestClient) -> None:
+    login(client)
+    campaign = create_campaign(client).json()
+    campaign_id = campaign["id"]
+    scene_url = f"/api/campaigns/{campaign_id}/scene"
+    assert client.get(scene_url).json() == {"status": "waiting", "scene": None}
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    payload = {key: item[key] for key in ("adventure_id", "fingerprint")}
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json=payload,
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    scene = client.get(scene_url)
+    assert scene.status_code == 200
+    assert scene.json()["status"] == "ready"
+    assert scene.headers["cache-control"] == "private, no-store"
+    resource_url = scene_url + "/resources/" + scene.json()["scene"]["illustration"]
+    resource = client.get(resource_url)
+    assert resource.status_code == 200
+    assert resource.headers["content-type"] == "image/png"
+    assert resource.headers["x-content-type-options"] == "nosniff"
+    assert resource.headers["cache-control"] == "private, no-store"
+    assert client.get(scene_url + "/resources/guessed").status_code == 404
+    client.cookies.clear()
+    assert client.get(scene_url).status_code == 403
+    assert client.get(resource_url).status_code == 403
+    login(client, "Боб")
+    assert client.get(scene_url).status_code == 403
+    assert client.get(resource_url).status_code == 403
+    assert (
+        client.post(
+            "/api/campaigns/join",
+            json={"secret": campaign["invitation"]["secret"]},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    assert client.get(scene_url).json() == scene.json()
+    assert client.get(resource_url).content == resource.content
+
+
+@pytest.mark.integration
+def test_scene_uses_pinned_version_after_source_removed_and_restart(
+    client: TestClient, migrated_engine: Engine, tmp_path: Path
+) -> None:
+    source = Path(__file__).resolve().parents[3] / "adventures" / "last-shift"
+    root = tmp_path / "packages"
+    shutil.copytree(source, root / "last-shift")
+    cast(FastAPI, client.app).state.adventure_catalog = LocalCatalog(root)
+    login(client)
+    campaign_id = create_campaign(client).json()["id"]
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json={key: item[key] for key in ("adventure_id", "fingerprint")},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    url = f"/api/campaigns/{campaign_id}/scene"
+    before = client.get(url).json()
+    image_url = url + "/resources/" + before["scene"]["illustration"]
+    image = client.get(image_url).content
+    shutil.rmtree(root)
+    with TestClient(create_app(engine=migrated_engine)) as restarted:
+        restarted.cookies.update(client.cookies)
+        assert restarted.get(url).json() == before
+        assert restarted.get(image_url).content == image
+
+
+@pytest.mark.integration
+def test_scene_fails_closed_on_unknown_snapshot_version(
+    client: TestClient, migrated_engine: Engine
+) -> None:
+    login(client)
+    campaign_id = create_campaign(client).json()["id"]
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json={key: item[key] for key in ("adventure_id", "fingerprint")},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    with migrated_engine.begin() as connection:
+        raw = connection.execute(text("SELECT content FROM adventures_snapshots")).scalar_one()
+        data = json.loads(raw)
+        data["schema_version"] = 2
+        data["secret"] = "SENTINEL_PRIVATE"
+        connection.execute(
+            text("UPDATE adventures_snapshots SET content = :content"),
+            {"content": json.dumps(data)},
+        )
+    result = client.get(f"/api/campaigns/{campaign_id}/scene")
+    assert result.status_code == 500
+    assert result.json() == {"detail": "scene_unavailable"}
+
+
+@pytest.mark.integration
+def test_scene_fails_closed_on_non_object_snapshot(
+    client: TestClient, migrated_engine: Engine
+) -> None:
+    login(client)
+    campaign_id = create_campaign(client).json()["id"]
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json={key: item[key] for key in ("adventure_id", "fingerprint")},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    with migrated_engine.begin() as connection:
+        connection.execute(text("UPDATE adventures_snapshots SET content = '[]'"))
+    response = client.get(f"/api/campaigns/{campaign_id}/scene")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "scene_unavailable"}
+
+
+@pytest.mark.integration
+def test_hidden_objects_locations_and_unreferenced_resources_are_not_exposed(
+    client: TestClient, migrated_engine: Engine
+) -> None:
+    login(client)
+    campaign_id = create_campaign(client).json()["id"]
+    item = client.get(f"/api/campaigns/{campaign_id}/adventures").json()["adventures"][0]
+    assert (
+        client.post(
+            f"/api/campaigns/{campaign_id}/adventure",
+            json={key: item[key] for key in ("adventure_id", "fingerprint")},
+            headers={"Origin": "http://localhost:5173"},
+        ).status_code
+        == 201
+    )
+    with migrated_engine.begin() as connection:
+        data = json.loads(
+            connection.execute(text("SELECT content FROM adventures_snapshots")).scalar_one()
+        )
+        start = data["locations"][0]
+        hidden = dict(
+            start["objects"][0],
+            id="secret-object",
+            visibility="hidden",
+            public_description="SENTINEL_HIDDEN",
+        )
+        start["objects"].append(hidden)
+        start["exits"].append(
+            {"id": "secret-exit", "object_id": "terminal", "target_location_id": "secret-location"}
+        )
+        data["locations"].append(
+            {
+                "id": "secret-location",
+                "name": "SENTINEL_LOCATION",
+                "illustration": "secret-image",
+                "public_description": "SENTINEL_DESCRIPTION",
+                "objects": [],
+                "exits": [],
+            }
+        )
+        data["assets"].append({"id": "secret-image", "path": "secret.png"})
+        connection.execute(
+            text("UPDATE adventures_snapshots SET content = :content"),
+            {"content": json.dumps(data)},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO adventures_resources (campaign_id, resource_id, content) "
+                "VALUES (:campaign_id, 'secret-image', :content)"
+            ),
+            {"campaign_id": campaign_id, "content": b"SECRET_IMAGE"},
+        )
+    url = f"/api/campaigns/{campaign_id}/scene"
+    response = client.get(url)
+    assert response.status_code == 200
+    assert all(
+        secret not in response.text
+        for secret in (
+            "secret-object",
+            "SENTINEL",
+            "secret-exit",
+            "secret-location",
+            "secret-image",
+        )
+    )
+    assert client.get(url + "/resources/secret-image").status_code == 404
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "bad_json", ['{"number":' + "9" * 5000 + "}", "[" * 2000 + "0" + "]" * 2000]
 )

@@ -1,6 +1,9 @@
 """The packaged templates match the snapshot's public reader contract."""
 
+import base64
+import gzip
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -10,6 +13,27 @@ from sqlalchemy.orm import Session
 
 from dunvyr.adventures.infrastructure.package_loader import load_package
 from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
+
+
+@pytest.mark.integration
+def test_historical_v1_snapshot_scene_is_read_without_catalog(migrated_engine: Engine) -> None:
+    # Canonical v1 snapshot from the package at base da8f878b, gzip -n and base64
+    # encoded; never generated from the current package or loader at test time.
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "last-shift-v1.json.gz.b64"
+    content = gzip.decompress(base64.b64decode(fixture.read_text())).decode("utf-8")
+    campaign_id = uuid4()
+    with Session(migrated_engine) as session:
+        reader = SqlSnapshotReader(session)
+        assert (
+            reader.pin(campaign_id, "last-shift", "historical", "old", "old", content, {})
+            == "created"
+        )
+        scene = reader.scene(campaign_id)
+        assert scene is not None
+        assert scene["name"] == "Приёмный шлюз"
+        assert scene["illustration"] == "airlock-image"
+        objects = cast(list[dict[str, Any]], scene["objects"])
+        assert [obj["name"] for obj in objects] == ["Терминал", "Шкаф", "Гермодверь"]
 
 
 @pytest.mark.integration

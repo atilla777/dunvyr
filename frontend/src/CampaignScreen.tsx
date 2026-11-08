@@ -4,6 +4,7 @@ import { revokeInvitation, type Campaign, type CampaignMember } from './api';
 import { ChatPanel } from './ChatPanel';
 import { AdventurePanel } from './AdventurePanel';
 import { CharacterPanel } from './CharacterPanel';
+import { SceneViewer } from './SceneViewer';
 import type { ChatMember } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 
@@ -85,12 +86,15 @@ export function CampaignScreen({
         Мест занято: {members.length} из {campaign.max_seats}
       </p>
 
-      <ChatPanel
-        campaignId={campaign.id}
-        currentGuestId={currentGuestId}
-        onMemberJoined={handleMemberJoined}
-        transportFactory={transportFactory}
-      />
+      <div className="campaign__play">
+        <SceneViewer campaignId={campaign.id} />
+        <ChatPanel
+          campaignId={campaign.id}
+          currentGuestId={currentGuestId}
+          onMemberJoined={handleMemberJoined}
+          transportFactory={transportFactory}
+        />
+      </div>
 
       <AdventurePanel campaignId={campaign.id} isOrganizer={isOrganizer} />
       <CharacterPanel campaignId={campaign.id} />

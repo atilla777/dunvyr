@@ -99,3 +99,47 @@ def get_adventure(
         return factory(session).read(campaign_id, guest.id)
     except PermissionError as error:
         raise HTTPException(status_code=403, detail="forbidden") from error
+
+
+@router.get("/{campaign_id}/scene")
+def get_scene(
+    campaign_id: UUID,
+    request: Request,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, object]:
+    factory: Callable[[Session], AdventureReader] = request.app.state.adventure_reader_factory
+    try:
+        scene = factory(session).scene(campaign_id, guest_id(request, session))
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except ValueError as error:
+        raise HTTPException(status_code=500, detail="scene_unavailable") from error
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"status": "ready" if scene else "waiting", "scene": scene}
+
+
+@router.get("/{campaign_id}/scene/resources/{resource_id}")
+def get_scene_resource(
+    campaign_id: UUID,
+    resource_id: str,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+) -> Response:
+    factory: Callable[[Session], AdventureReader] = request.app.state.adventure_reader_factory
+    try:
+        resource = factory(session).resource(campaign_id, guest_id(request, session), resource_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except ValueError as error:
+        raise HTTPException(status_code=500, detail="scene_unavailable") from error
+    if resource is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return Response(
+        content=resource,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

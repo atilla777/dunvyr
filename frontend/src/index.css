@@ -15,6 +15,63 @@
   box-sizing: border-box;
 }
 
+.campaign__play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+.scene {
+  min-width: 0;
+  text-align: left;
+}
+.scene button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.scene__viewport {
+  overflow: auto;
+  max-height: 60vh;
+}
+.scene__image {
+  position: relative;
+}
+.scene__image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.scene__hotspot {
+  position: absolute;
+  background: transparent;
+  border: 2px solid #ffcb42;
+  cursor: pointer;
+}
+.scene__hotspot:focus-visible {
+  outline: 3px solid #1f6feb;
+}
+.scene__mobile {
+  display: none;
+}
+.scene__dialog {
+  max-width: 100vw;
+  max-height: 100dvh;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .campaign__play {
+    display: flex;
+    flex-direction: column;
+  }
+  .scene__desktop {
+    display: none;
+  }
+  .scene__mobile {
+    display: block;
+  }
+}
+
 .adventure {
   max-width: 100%;
   text-align: left;

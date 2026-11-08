@@ -6,6 +6,7 @@ import { CampaignScreen } from './CampaignScreen';
 import type { ChatTransportHandlers, ChatTransportFactory } from './chatSocket';
 
 vi.mock('./CharacterPanel', () => ({ CharacterPanel: () => null }));
+vi.mock('./SceneViewer', () => ({ SceneViewer: () => null }));
 
 const CURRENT_GUEST_ID = '11111111-1111-4111-8111-111111111111';
 

@@ -7,6 +7,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from dunvyr.adventures.domain.package import project_initial_scene, validate_references
+from dunvyr.adventures.infrastructure.package_loader import Package
 from dunvyr.adventures.public import (
     ArchetypeTemplate,
     Characteristics,
@@ -22,6 +24,37 @@ class SqlSnapshotReader:
 
     def release_read(self) -> None:
         self._session.rollback()
+
+    def scene(self, campaign_id: UUID) -> dict[str, object] | None:
+        content = self._session.execute(
+            text("SELECT content FROM adventures_snapshots WHERE campaign_id = :campaign_id"),
+            {"campaign_id": str(campaign_id)},
+        ).scalar_one_or_none()
+        if content is None:
+            return None
+        try:
+            data = json.loads(content)
+            if (
+                not isinstance(data, dict)
+                or type(data.get("schema_version")) is not int
+                or data["schema_version"] != 1
+            ):
+                raise ValueError("unsupported snapshot")
+            package = Package.model_validate(data).model_dump()
+            validate_references(package)
+            return project_initial_scene(package)
+        except (ValueError, KeyError, TypeError, RecursionError) as error:
+            raise ValueError("invalid snapshot") from error
+
+    def resource(self, campaign_id: UUID, resource_id: str) -> bytes | None:
+        result: bytes | None = self._session.execute(
+            text(
+                "SELECT content FROM adventures_resources "
+                "WHERE campaign_id = :campaign_id AND resource_id = :resource_id"
+            ),
+            {"campaign_id": str(campaign_id), "resource_id": resource_id},
+        ).scalar_one_or_none()
+        return result
 
     def public_snapshot(self, campaign_id: UUID) -> dict[str, str] | None:
         row = (

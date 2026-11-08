@@ -49,11 +49,111 @@ test('организатор выбирает приключение, участ
     const draft = guest.getByLabel('Сообщение');
     await draft.fill('Черновик');
     await draft.focus();
+    await draft.evaluate((input: HTMLTextAreaElement) => input.setSelectionRange(1, 4));
     await page.getByRole('button', { name: 'Выбрать Последняя смена' }).click();
     await expect(page.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible({ timeout: 15000 });
     await expect(draft).toHaveValue('Черновик');
     await expect(draft).toBeFocused();
+    expect(
+      await draft.evaluate((input: HTMLTextAreaElement) => [
+        input.selectionStart,
+        input.selectionEnd,
+      ]),
+    ).toEqual([1, 4]);
+    await expect(page.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(guest.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible({
+      timeout: 15000,
+    });
+    if (test.info().project.name === 'smoke-mobile') {
+      await guest.getByRole('button', { name: 'Открыть сцену' }).click();
+      const dialog = guest.getByRole('dialog', { name: 'Сцена: Приёмный шлюз' });
+      await expect(dialog).toBeVisible();
+      const image = dialog.getByRole('img', { name: 'Приёмный шлюз' });
+      await expect
+        .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+        .toBeGreaterThan(0);
+      const close = dialog.getByRole('button', { name: 'Закрыть сцену' });
+      await close.focus();
+      await guest.keyboard.press('Tab');
+      expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(
+        true,
+      );
+      await guest.keyboard.press('Shift+Tab');
+      await expect(close).toBeFocused();
+      await guest.keyboard.press('Shift+Tab');
+      expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(
+        true,
+      );
+      await guest.keyboard.press('Tab');
+      await expect(close).toBeFocused();
+      await dialog.getByRole('button', { name: 'Увеличить' }).click();
+      const viewport = dialog.getByLabel('Изображение сцены: прокрутка при увеличении');
+      expect(await viewport.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+        true,
+      );
+      const bounds = await viewport.boundingBox();
+      expect(bounds).not.toBeNull();
+      const cdp = await participant.newCDPSession(guest);
+      const y = bounds!.y + bounds!.height / 2;
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: bounds!.x + bounds!.width * 0.8, y }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: bounds!.x + bounds!.width * 0.2, y }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect
+        .poll(() => viewport.evaluate((element) => element.scrollLeft))
+        .toBeGreaterThan(0);
+      await cdp.detach();
+      const objects = dialog.getByRole('list');
+      for (const name of ['Терминал', 'Шкаф', 'Гермодверь']) {
+        const object = objects.getByRole('button', { name });
+        await expect(object).toBeVisible();
+        const size = await object.boundingBox();
+        expect(size!.width).toBeGreaterThanOrEqual(44);
+        expect(size!.height).toBeGreaterThanOrEqual(44);
+      }
+      await objects.getByRole('button', { name: 'Терминал' }).tap();
+      await expect(dialog.getByLabel('Описание объекта')).toContainText(
+        'Экран терминала ещё светится.',
+      );
+      expect(
+        await guest.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      await guest.keyboard.press('Escape');
+      await expect(dialog).not.toBeVisible();
+      await expect(guest.getByRole('button', { name: 'Открыть сцену' })).toBeFocused();
+      await expect(draft).toHaveValue('Черновик');
+      await draft.focus();
+      expect(
+        await draft.evaluate((input: HTMLTextAreaElement) => [
+          input.selectionStart,
+          input.selectionEnd,
+        ]),
+      ).toEqual([1, 4]);
+    } else {
+      const scene = guest.getByRole('region', { name: 'Сцена' });
+      const image = scene.getByRole('img', { name: 'Приёмный шлюз' });
+      await expect
+        .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+        .toBeGreaterThan(0);
+      const sceneBox = await scene.boundingBox();
+      const chatBox = await guest.getByRole('region', { name: 'Чат' }).boundingBox();
+      expect(sceneBox).not.toBeNull();
+      expect(chatBox).not.toBeNull();
+      expect(sceneBox!.x + sceneBox!.width).toBeLessThanOrEqual(chatBox!.x);
+      expect(Math.max(sceneBox!.y, chatBox!.y)).toBeLessThan(
+        Math.min(sceneBox!.y + sceneBox!.height, chatBox!.y + chatBox!.height),
+      );
+    }
     await expect(guest.getByLabel('Имя персонажа')).toBeVisible({ timeout: 15000 });
     await guest.getByLabel('Имя персонажа').fill('Разведчица');
     await guest.getByLabel('Внешность').fill('Синяя куртка');
@@ -81,6 +181,7 @@ test('организатор выбирает приключение, участ
     await expect(guest.getByRole('button', { name: /Выбрать/ })).toHaveCount(0);
     await guest.reload();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
+    await expect(guest.getByRole('heading', { name: 'Приёмный шлюз' })).toBeVisible();
     await expect(guest.getByText('Чат на связи')).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Разведчица' })).toBeVisible();
   } finally {

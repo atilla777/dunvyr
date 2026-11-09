@@ -33,6 +33,7 @@ from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.config import OriginAllowList
 from dunvyr.communication.presentation.dependencies import get_chat_service, get_current_guest
 from dunvyr.communication.presentation.schemas import ChatHistoryResponse
+from dunvyr.gameplay.public import QueueReader
 from dunvyr.identity.public import SESSION_COOKIE_NAME, GuestResolver, GuestSnapshot
 from dunvyr.infrastructure.db import get_session
 
@@ -292,6 +293,7 @@ def get_chat_history(
             detail="forbidden",
         ) from error
     reader: GameSessionReader = request.app.state.game_session_reader_factory(session)
+    queue_reader: QueueReader = request.app.state.queue_reader_factory(session)
     presence: PresenceReader = request.app.state.presence
     return ChatHistoryResponse.model_validate(
         {
@@ -300,6 +302,7 @@ def get_chat_history(
             "last_sequence": history.last_sequence,
             "game_session_state": asdict(reader.read(campaign_id)),
             "presence_state": asdict(presence.read(campaign_id)),
+            "queue_state": asdict(queue_reader.read(campaign_id)),
         }
     )
 

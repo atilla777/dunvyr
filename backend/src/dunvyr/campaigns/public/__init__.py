@@ -7,6 +7,7 @@ import campaigns inner layers or write campaigns tables.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -66,6 +67,12 @@ class PresenceReader(Protocol):
     def read(self, campaign_id: UUID) -> PresenceState: ...
 
 
+class GuardedPresenceReader(Protocol):
+    """DB writer lock precedes this short guard; commit before leaving."""
+
+    def guard(self, campaign_id: UUID) -> AbstractContextManager[PresenceState]: ...
+
+
 class CampaignEventPublisher(Protocol):
     """Post-commit port for campaign facts other contexts deliver in real time.
 
@@ -82,6 +89,7 @@ class CampaignEventPublisher(Protocol):
 
 __all__ = [
     "CampaignEventPublisher",
+    "CampaignGameplayAccess",
     "CampaignMemberSnapshot",
     "CampaignMembershipReader",
     "CampaignSnapshot",
@@ -91,6 +99,7 @@ __all__ = [
     "GameSessionReader",
     "GameSessionSnapshot",
     "GameSessionState",
+    "GuardedPresenceReader",
     "PresenceObserver",
     "PresencePublisher",
     "PresenceReader",
@@ -120,6 +129,14 @@ class GameSessionChanged:
 
 
 class GameSessionReader(Protocol):
+    def read(self, campaign_id: UUID) -> GameSessionState: ...
+
+
+class CampaignGameplayAccess(Protocol):
+    """Transaction-bound owner adapter; lock before all gameplay reads."""
+
+    def lock(self, campaign_id: UUID) -> None: ...
+    def roster(self, campaign_id: UUID) -> tuple[CampaignMemberSnapshot, ...]: ...
     def read(self, campaign_id: UUID) -> GameSessionState: ...
 
 

@@ -59,6 +59,7 @@ beforeEach(() => {
                   last_sequence: 0,
                   game_session_state: { revision: 0, session: null },
                   presence_state: { epoch: 'epoch', revision: 0, online_guest_ids: [] },
+                  queue_state: { version: 0, queue: null },
                 },
         ),
       ),

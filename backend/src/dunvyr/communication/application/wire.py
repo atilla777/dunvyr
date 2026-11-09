@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from dunvyr.communication.domain.events import ChatEvent, GameSessionChangedEvent, MemberJoinedEvent
+import json
+
+from dunvyr.communication.domain.events import (
+    ChatEvent,
+    GameSessionChangedEvent,
+    MemberJoinedEvent,
+    QueueChangedEvent,
+)
 
 
 def event_to_wire(event: ChatEvent) -> dict[str, object]:
@@ -13,6 +20,8 @@ def event_to_wire(event: ChatEvent) -> dict[str, object]:
         "sequence": event.sequence,
         "occurred_at": event.occurred_at.isoformat(),
     }
+    if isinstance(event, QueueChangedEvent):
+        return {"type": "queue_changed", **common, "queue_state": json.loads(event.state_json)}
     if isinstance(event, GameSessionChangedEvent):
         return {
             "type": "game_session_changed",

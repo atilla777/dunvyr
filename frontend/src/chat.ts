@@ -46,7 +46,30 @@ export interface GameSessionChangedEvent extends ChatEventBase {
   game_session_state: GameSessionState;
 }
 
-export type ChatEvent = ChatMessageEvent | ChatMemberJoinedEvent | GameSessionChangedEvent;
+export interface QueueState {
+  version: number;
+  queue: null | {
+    encounter_id: string;
+    participants: { guest_id: string; character_id: string }[];
+    round_order: string[];
+    round_number: number;
+    cursor: number;
+    skipped: string[];
+    current_guest_id: string | null;
+  };
+}
+
+export interface QueueChangedEvent extends ChatEventBase {
+  type: 'queue_changed';
+  queue_state: QueueState;
+}
+
+export function newerQueueState(current: QueueState | null, incoming: QueueState): QueueState {
+  return current === null || incoming.version > current.version ? incoming : current;
+}
+
+export type ChatEvent =
+  ChatMessageEvent | ChatMemberJoinedEvent | GameSessionChangedEvent | QueueChangedEvent;
 
 export interface ChatHistory {
   campaign_id: string;
@@ -54,6 +77,32 @@ export interface ChatHistory {
   last_sequence: number;
   game_session_state: GameSessionState;
   presence_state: PresenceState;
+  queue_state: QueueState;
+}
+
+export function isQueueState(value: unknown): value is QueueState {
+  if (!isRecord(value) || !Number.isSafeInteger(value.version) || (value.version as number) < 0)
+    return false;
+  if (value.queue === null) return true;
+  const q = value.queue;
+  return (
+    isRecord(q) &&
+    typeof q.encounter_id === 'string' &&
+    Array.isArray(q.participants) &&
+    q.participants.every(
+      (p: unknown) =>
+        isRecord(p) && typeof p.guest_id === 'string' && typeof p.character_id === 'string',
+    ) &&
+    Array.isArray(q.round_order) &&
+    q.round_order.every((id: unknown) => typeof id === 'string') &&
+    Number.isSafeInteger(q.round_number) &&
+    (q.round_number as number) > 0 &&
+    Number.isSafeInteger(q.cursor) &&
+    (q.cursor as number) >= 0 &&
+    Array.isArray(q.skipped) &&
+    q.skipped.every((id: unknown) => typeof id === 'string') &&
+    (q.current_guest_id === null || typeof q.current_guest_id === 'string')
+  );
 }
 
 export interface PresenceState {
@@ -99,7 +148,8 @@ export function isChatEvent(value: unknown): value is ChatEvent {
   if (
     value.type !== 'message' &&
     value.type !== 'member_joined' &&
-    value.type !== 'game_session_changed'
+    value.type !== 'game_session_changed' &&
+    value.type !== 'queue_changed'
   ) {
     return false;
   }
@@ -107,7 +157,8 @@ export function isChatEvent(value: unknown): value is ChatEvent {
     typeof value.event_id === 'string' &&
     typeof value.campaign_id === 'string' &&
     typeof value.sequence === 'number' &&
-    (value.type !== 'game_session_changed' || isGameSessionState(value.game_session_state))
+    (value.type !== 'game_session_changed' || isGameSessionState(value.game_session_state)) &&
+    (value.type !== 'queue_changed' || isQueueState(value.queue_state))
   );
 }
 

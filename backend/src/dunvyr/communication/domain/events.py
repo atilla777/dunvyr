@@ -161,7 +161,27 @@ class GameSessionChangedEvent:
             raise InvalidEvent("Invalid session state")
 
 
-ChatEvent = MessageEvent | MemberJoinedEvent | GameSessionChangedEvent
+@dataclass(frozen=True, slots=True)
+class QueueChangedEvent:
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    version: int
+    state_json: str
+
+    def __post_init__(self) -> None:
+        _validate_envelope(
+            event_id=self.event_id,
+            campaign_id=self.campaign_id,
+            sequence=self.sequence,
+            occurred_at=self.occurred_at,
+        )
+        if type(self.version) is not int or self.version < 1:
+            raise InvalidEvent("Invalid queue version")
+
+
+ChatEvent = MessageEvent | MemberJoinedEvent | GameSessionChangedEvent | QueueChangedEvent
 
 
 __all__ = [

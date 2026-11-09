@@ -19,6 +19,7 @@ from dunvyr.communication.domain.events import (
     GameSessionChangedEvent,
     MemberJoinedEvent,
     MessageEvent,
+    QueueChangedEvent,
 )
 from dunvyr.communication.domain.message import Message
 from dunvyr.communication.infrastructure import tables
@@ -107,6 +108,12 @@ class SqlAlchemyChatEventRepository:
                 member_role=event.member.role,
                 member_joined_at=_to_text(event.member.joined_at),
             )
+        elif isinstance(event, QueueChangedEvent):
+            values.update(
+                kind="queue_changed",
+                queue_version=event.version,
+                queue_state=event.state_json,
+            )
         else:
             from dunvyr.communication.application.wire import event_to_wire
 
@@ -163,6 +170,15 @@ class SqlAlchemyChatEventRepository:
 
 
 def _to_event(row: RowMapping) -> ChatEvent:
+    if row["kind"] == "queue_changed":
+        return QueueChangedEvent(
+            UUID(row["event_id"]),
+            UUID(row["campaign_id"]),
+            row["sequence"],
+            _from_text(row["occurred_at"]),
+            row["queue_version"],
+            row["queue_state"],
+        )
     if row["kind"] == "game_session_changed":
         state = json.loads(row["game_session_state"])
         session = state["session"]

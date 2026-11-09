@@ -64,6 +64,7 @@ disallow_untyped_decorators = false
 
 [tool.importlinter]
 root_packages = ["dunvyr"]
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Adventures public contract imports no inner layers"
@@ -321,3 +322,42 @@ name = "Characters application imports no adapters"
 type = "forbidden"
 source_modules = ["dunvyr.characters.application"]
 forbidden_modules = ["dunvyr.characters.infrastructure", "dunvyr.characters.presentation"]
+
+[[tool.importlinter.contracts]]
+name = "Gameplay layering: presentation > application > domain"
+type = "layers"
+layers = ["dunvyr.gameplay.presentation", "dunvyr.gameplay.application", "dunvyr.gameplay.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Gameplay layering: infrastructure > application > domain"
+type = "layers"
+layers = ["dunvyr.gameplay.infrastructure", "dunvyr.gameplay.application", "dunvyr.gameplay.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Gameplay domain is pure"
+type = "forbidden"
+source_modules = ["dunvyr.gameplay.domain"]
+forbidden_modules = [
+    "dunvyr.gameplay.application", "dunvyr.gameplay.infrastructure", "dunvyr.gameplay.presentation",
+    "dunvyr.gameplay.public", "dunvyr.adventures", "dunvyr.campaigns", "dunvyr.characters",
+    "dunvyr.identity", "dunvyr.communication", "dunvyr.narration",
+    "fastapi", "pydantic", "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
+name = "Gameplay application imports no adapters"
+type = "forbidden"
+source_modules = ["dunvyr.gameplay.application"]
+forbidden_modules = ["dunvyr.gameplay.infrastructure", "dunvyr.gameplay.presentation"]
+
+[[tool.importlinter.contracts]]
+name = "Gameplay public imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.gameplay.public"]
+forbidden_modules = ["dunvyr.gameplay.domain", "dunvyr.gameplay.application", "dunvyr.gameplay.infrastructure", "dunvyr.gameplay.presentation"]
+
+[[tool.importlinter.contracts]]
+name = "Characters public imports no inner layers"
+type = "forbidden"
+source_modules = ["dunvyr.characters.public"]
+forbidden_modules = ["dunvyr.characters.domain", "dunvyr.characters.application", "dunvyr.characters.infrastructure", "dunvyr.characters.presentation"]

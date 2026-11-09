@@ -4,11 +4,13 @@ import { fetchChatHistory } from './api';
 import {
   isGameSessionState,
   isPresenceState,
+  isQueueState,
   mergeChatEvents,
   type ChatEvent,
   type ChatMember,
   type GameSessionState,
   type PresenceState,
+  type QueueState,
 } from './chat';
 import {
   createChatTransport,
@@ -26,6 +28,7 @@ interface ChatPanelProps {
   onSessionState?: (state: GameSessionState) => void;
   onConnection?: (status: ChatConnectionStatus) => void;
   onPresenceState?: (state: PresenceState) => void;
+  onQueueState?: (state: QueueState) => void;
   transportFactory?: ChatTransportFactory;
 }
 
@@ -64,6 +67,7 @@ export function ChatPanel({
   onSessionState,
   onConnection,
   onPresenceState,
+  onQueueState,
   transportFactory,
 }: ChatPanelProps) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -79,6 +83,7 @@ export function ChatPanel({
   const onSessionStateRef = useRef(onSessionState);
   const onConnectionRef = useRef(onConnection);
   const onPresenceStateRef = useRef(onPresenceState);
+  const onQueueStateRef = useRef(onQueueState);
   const presenceRef = useRef<PresenceState | null>(null);
   useEffect(() => {
     onMemberJoinedRef.current = onMemberJoined;
@@ -87,7 +92,8 @@ export function ChatPanel({
     onSessionStateRef.current = onSessionState;
     onConnectionRef.current = onConnection;
     onPresenceStateRef.current = onPresenceState;
-  }, [onSessionState, onConnection, onPresenceState]);
+    onQueueStateRef.current = onQueueState;
+  }, [onSessionState, onConnection, onPresenceState, onQueueState]);
 
   /**
    * Merge server events exactly once per `event_id`. The same event can arrive
@@ -128,6 +134,7 @@ export function ChatPanel({
         if (active) {
           if (event.type === 'game_session_changed')
             onSessionStateRef.current?.(event.game_session_state);
+          if (event.type === 'queue_changed') onQueueStateRef.current?.(event.queue_state);
           acceptEvents([event], true);
         }
       },
@@ -167,6 +174,10 @@ export function ChatPanel({
             if (!isGameSessionState(history.game_session_state))
               throw new Error('Invalid session snapshot');
             onSessionStateRef.current(history.game_session_state);
+          }
+          if (onQueueStateRef.current) {
+            if (!isQueueState(history.queue_state)) throw new Error('Invalid queue snapshot');
+            onQueueStateRef.current(history.queue_state);
           }
           for (const event of history.events) {
             lastSequence.current = Math.max(lastSequence.current, event.sequence);

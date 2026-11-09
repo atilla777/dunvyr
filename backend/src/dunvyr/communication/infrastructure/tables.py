@@ -30,6 +30,8 @@ communication_events = sa.Table(
     sa.Column("member_joined_at", sa.Text(), nullable=True),
     sa.Column("game_session_revision", sa.Integer()),
     sa.Column("game_session_state", sa.Text()),
+    sa.Column("queue_version", sa.Integer()),
+    sa.Column("queue_state", sa.Text()),
     sa.PrimaryKeyConstraint("campaign_id", "sequence", name="pk_communication_events"),
     sa.UniqueConstraint(
         "campaign_id",
@@ -49,5 +51,12 @@ sa.Index(
     "uq_communication_game_session_revision",
     communication_events.c.campaign_id,
     communication_events.c.game_session_revision,
+    unique=True,
+)
+
+sa.Index(
+    "uq_communication_queue_version",
+    communication_events.c.campaign_id,
+    communication_events.c.queue_version,
     unique=True,
 )

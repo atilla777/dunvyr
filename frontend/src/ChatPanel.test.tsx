@@ -59,6 +59,7 @@ function history(events: ChatEvent[] = []): ChatHistory {
     events,
     last_sequence: events.at(-1)?.sequence ?? 0,
     game_session_state: { revision: 0, session: null },
+    queue_state: { version: 0, queue: null },
     presence_state: { epoch: 'epoch', revision: 0, online_guest_ids: [] },
   };
 }
@@ -193,6 +194,44 @@ describe('ChatPanel', () => {
       }),
     );
     expect(onSessionState).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText('Сообщение')).toHaveValue('черновик');
+  });
+  it('delivers queue snapshots and live changes across resync without losing the draft', async () => {
+    const initial = { version: 0, queue: null };
+    const newer = { version: 2, queue: null };
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ ...history(), queue_state: initial }))
+        .mockResolvedValueOnce(jsonResponse({ ...history(), queue_state: newer })),
+    );
+    const onQueueState = vi.fn();
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+        onQueueState={onQueueState}
+      />,
+    );
+    await screen.findByText('Чат на связи');
+    fireEvent.change(screen.getByLabelText('Сообщение'), { target: { value: 'черновик' } });
+    await act(async () => {
+      await transports[0].handlers.onResync?.(new AbortController().signal);
+    });
+    act(() =>
+      transports[0].handlers.onEvent({
+        type: 'queue_changed',
+        event_id: 'queue',
+        campaign_id: CAMPAIGN_ID,
+        sequence: 3,
+        occurred_at: 'now',
+        queue_state: initial,
+      }),
+    );
+    expect(onQueueState.mock.calls.map(([state]) => state)).toEqual([initial, newer, initial]);
     expect(screen.getByLabelText('Сообщение')).toHaveValue('черновик');
   });
   it('loads history and distinguishes own messages from other members', async () => {

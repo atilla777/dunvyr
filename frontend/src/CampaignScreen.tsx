@@ -7,11 +7,12 @@ import { CharacterPanel } from './CharacterPanel';
 import { SceneViewer } from './SceneViewer';
 import { LocationMap } from './LocationMap';
 import { EncounterCatalog } from './EncounterCatalog';
-import type { ChatMember, PresenceState } from './chat';
+import { newerQueueState, type ChatMember, type PresenceState, type QueueState } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 import type { ChatConnectionStatus } from './chatSocket';
 import { GameSessionPanel } from './GameSessionPanel';
 import { useGameSession } from './useGameSession';
+import { QueuePanel } from './QueuePanel';
 
 interface CampaignScreenProps {
   campaign: Campaign;
@@ -42,6 +43,11 @@ export function CampaignScreen({
   const [members, setMembers] = useState(campaign.members ?? []);
   const [connection, setConnection] = useState<ChatConnectionStatus>('connecting');
   const [presence, setPresence] = useState<PresenceState | null>(null);
+  const [queue, setQueue] = useState<QueueState | null>(null);
+  const acceptQueue = useCallback(
+    (next: QueueState) => setQueue((current) => newerQueueState(current, next)),
+    [],
+  );
   const gameSession = useGameSession(campaign.id);
   const handleMemberJoined = useCallback((member: ChatMember) => {
     const nextMember = toCampaignMember(member);
@@ -100,6 +106,16 @@ export function CampaignScreen({
           <SceneViewer campaignId={campaign.id} />
           <LocationMap campaignId={campaign.id} />
           <EncounterCatalog campaignId={campaign.id} />
+          <QueuePanel
+            campaignId={campaign.id}
+            currentGuestId={currentGuestId}
+            members={members}
+            state={queue}
+            accept={acceptQueue}
+            session={gameSession.state}
+            presence={presence}
+            connection={connection}
+          />
         </div>
         <ChatPanel
           campaignId={campaign.id}
@@ -108,6 +124,7 @@ export function CampaignScreen({
           onSessionState={gameSession.accept}
           onConnection={setConnection}
           onPresenceState={setPresence}
+          onQueueState={acceptQueue}
           transportFactory={transportFactory}
         />
       </div>

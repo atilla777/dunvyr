@@ -70,8 +70,40 @@ class GameSessionEventResponse(BaseModel):
     game_session_state: GameSessionStateBody
 
 
+class QueueParticipantBody(BaseModel):
+    guest_id: UUID
+    character_id: UUID
+
+
+class QueueBody(BaseModel):
+    encounter_id: str
+    participants: tuple[QueueParticipantBody, ...]
+    round_order: tuple[UUID, ...]
+    round_number: int
+    cursor: int
+    skipped: tuple[UUID, ...]
+    current_guest_id: UUID | None
+
+
+class QueueStateBody(BaseModel):
+    version: int
+    queue: QueueBody | None
+
+
+class QueueEventResponse(BaseModel):
+    type: Literal["queue_changed"]
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    queue_state: QueueStateBody
+
+
 ChatEventResponse = Annotated[
-    ChatMessageEventResponse | ChatMemberJoinedEventResponse | GameSessionEventResponse,
+    ChatMessageEventResponse
+    | ChatMemberJoinedEventResponse
+    | GameSessionEventResponse
+    | QueueEventResponse,
     Field(discriminator="type"),
 ]
 
@@ -82,6 +114,7 @@ class ChatHistoryResponse(BaseModel):
     last_sequence: int
     game_session_state: GameSessionStateBody
     presence_state: PresenceStateBody
+    queue_state: QueueStateBody
 
 
 __all__ = [

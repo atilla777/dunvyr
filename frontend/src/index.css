@@ -548,3 +548,8 @@ body {
 .encounter-catalog li {
   margin-block: 0.5rem;
 }
+/* Queue controls remain usable without hover on touch screens. */
+.queue-panel button {
+  min-height: 44px;
+  margin: 0.25rem;
+}

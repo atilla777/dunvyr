@@ -35,7 +35,7 @@ test('организатор выбирает приключение, участ
     await expect(page.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible({ timeout: 15000 });
     for (const viewer of [page, guest]) {
-      const encounters = viewer.getByRole('region', { name: 'Испытания' });
+      const encounters = viewer.getByRole('region', { name: 'Испытания', exact: true });
       await expect(encounters.getByRole('heading', { name: 'Нестабильный терминал' })).toBeVisible({
         timeout: 15000,
       });

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from dunvyr.campaigns.application.errors import CampaignAccessDenied, CampaignNotFound
 from dunvyr.campaigns.application.game_sessions import SessionCommand, SessionConflict
 from dunvyr.campaigns.infrastructure import tables as t
-from dunvyr.campaigns.public import GameSessionSnapshot, GameSessionState
+from dunvyr.campaigns.public import CampaignMemberSnapshot, GameSessionSnapshot, GameSessionState
 
 
 def state_data(state: GameSessionState) -> dict[str, object]:
@@ -55,6 +55,26 @@ class SqlGameSessionUnitOfWork:
             update(t.session_state)
             .where(t.session_state.c.campaign_id == str(campaign_id))
             .values(revision=t.session_state.c.revision)
+        )
+
+    def roster(self, campaign_id: UUID) -> tuple[CampaignMemberSnapshot, ...]:
+        rows = (
+            self.session.execute(
+                select(t.members)
+                .where(t.members.c.campaign_id == str(campaign_id))
+                .order_by(t.members.c.joined_at, t.members.c.guest_id)
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(
+            CampaignMemberSnapshot(
+                UUID(row["guest_id"]),
+                row["nickname"],
+                row["role"],
+                datetime.fromisoformat(row["joined_at"]),
+            )
+            for row in rows
         )
 
     def authorize(self, campaign_id: UUID, actor_id: UUID, *, organizer: bool) -> None:

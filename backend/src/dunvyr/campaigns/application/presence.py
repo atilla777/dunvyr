@@ -1,7 +1,8 @@
 """Synchronized process-local presence, independent of any database transaction."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from threading import Lock
 from time import monotonic
 from uuid import UUID, uuid4
@@ -82,3 +83,13 @@ class PresenceRuntime:
             state = self._states.setdefault(campaign_id, PresenceState(self._epoch, 0, ()))
         self._publish(changes)
         return state
+
+    @contextmanager
+    def guard(self, campaign_id: UUID) -> Iterator[PresenceState]:
+        changes: list[tuple[UUID, PresenceState]] = []
+        try:
+            with self._lock:
+                changes = self._collect(self._clock())
+                yield self._states.setdefault(campaign_id, PresenceState(self._epoch, 0, ()))
+        finally:
+            self._publish(changes)

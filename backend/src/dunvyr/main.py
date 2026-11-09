@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from dunvyr import __version__
 from dunvyr.adventures.application.service import AdventureReader, AdventureSelector
@@ -31,6 +36,7 @@ from dunvyr.campaigns.infrastructure.membership import build_campaign_membership
 from dunvyr.campaigns.presentation.game_sessions import router as game_sessions_router
 from dunvyr.campaigns.presentation.router import router as campaigns_router
 from dunvyr.characters.application.service import CharacterService
+from dunvyr.characters.infrastructure.eligibility import SqlCharacterEligibilityReader
 from dunvyr.characters.infrastructure.repository import CharacterRepository
 from dunvyr.characters.presentation.router import router as characters_router
 from dunvyr.communication.application.service import ChatService
@@ -42,8 +48,12 @@ from dunvyr.communication.infrastructure.game_sessions import (
     GameSessionEventStager,
     GameSessionNotifier,
 )
+from dunvyr.communication.infrastructure.queues import QueueEventStager
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.router import router as communication_router
+from dunvyr.gameplay.application.service import QueueService
+from dunvyr.gameplay.infrastructure.repository import SqlQueueUnitOfWork
+from dunvyr.gameplay.presentation.router import router as queue_router
 from dunvyr.identity.application.rate_limit import RateLimitPolicy, SlidingWindowRateLimiter
 from dunvyr.identity.infrastructure.clock import utc_now
 from dunvyr.identity.infrastructure.factory import build_identity_service
@@ -56,6 +66,33 @@ from dunvyr.infrastructure.db import (
 )
 from dunvyr.infrastructure.migrations import run_migrations
 from dunvyr.presentation.health import router as health_router
+
+_memory_locks: WeakKeyDictionary[Engine, Lock] = WeakKeyDictionary()
+_memory_registry_lock = Lock()
+
+
+def _app_sessions(engine: Engine) -> sessionmaker[Session]:
+    sessions = create_session_factory(engine)
+    if not isinstance(engine.pool, StaticPool):
+        return sessions
+    # The in-memory engine has ONE DBAPI connection. Concurrent Sessions cannot
+    # own independent transactions on it: even closing a reader rolls back a
+    # writer. Serialize application transactions only for this transient mode.
+    # File SQLite still uses independent connections, owner locks and SQL CAS.
+    with _memory_registry_lock:
+        lock = _memory_locks.setdefault(engine, Lock())
+
+    def begin(session: Session, transaction: SessionTransaction) -> None:
+        if transaction.parent is None:
+            lock.acquire()
+
+    def end(session: Session, transaction: SessionTransaction) -> None:
+        if transaction.parent is None:
+            lock.release()
+
+    event.listen(sessions, "after_transaction_create", begin)
+    event.listen(sessions, "after_transaction_end", end)
+    return sessions
 
 
 def create_app(
@@ -89,22 +126,43 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        stop = asyncio.Event()
+
+        def reconcile_queues() -> None:
+            try:
+                with app.state.session_factory() as session:
+                    campaign_ids = SqlQueueUnitOfWork(session).campaigns()
+            except Exception:
+                logging.getLogger(__name__).exception("Could not enumerate durable queues")
+                return
+            for campaign_id in campaign_ids:
+                try:
+                    with app.state.session_factory() as session:
+                        app.state.queue_service_factory(session).reconcile(campaign_id)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Queue reconciliation failed; retrying next sweep"
+                    )
+
         async def sweep() -> None:
-            while True:
-                await asyncio.sleep(presence_sweep_interval)
+            while not stop.is_set():
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=presence_sweep_interval)
+                if stop.is_set():
+                    break
                 app.state.presence.sweep()
+                await asyncio.to_thread(reconcile_queues)
 
         task = asyncio.create_task(sweep())
         try:
             yield
         finally:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+            stop.set()
+            await task
 
     app = FastAPI(title="Dunvyr", version=__version__, lifespan=lifespan)
     app.state.engine = resolved_engine
-    app.state.session_factory = create_session_factory(resolved_engine)
+    app.state.session_factory = _app_sessions(resolved_engine)
     app.state.database_url = resolved_url
     app.state.allowed_origins = allowed_origins
     app.state.cookie_secure = env_flag(os.environ.get("DUNVYR_COOKIE_SECURE"))
@@ -154,6 +212,21 @@ def create_app(
         clock=utc_now,
     )
     app.state.game_session_reader_factory = SqlGameSessionUnitOfWork
+    app.state.queue_reader_factory = SqlQueueUnitOfWork
+    app.state.queue_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(),
+        clock=utc_now,
+    )
+    app.state.queue_service_factory = lambda session: QueueService(
+        SqlQueueUnitOfWork(session),
+        SqlGameSessionUnitOfWork(session),
+        SqlCharacterEligibilityReader(CharacterRepository(session), SqlSnapshotReader(session)),
+        SqlSnapshotReader(session),
+        QueueEventStager(session),
+        GameSessionNotifier(app.state.session_factory, realtime_hub),
+        utc_now,
+        app.state.presence,
+    )
     app.state.game_session_service_factory = lambda session: GameSessionService(
         SqlGameSessionUnitOfWork(session),
         GameSessionEventStager(session),
@@ -187,6 +260,7 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(campaigns_router)
     app.include_router(game_sessions_router)
+    app.include_router(queue_router)
     app.include_router(adventures_router)
     app.include_router(characters_router)
     app.include_router(communication_router)

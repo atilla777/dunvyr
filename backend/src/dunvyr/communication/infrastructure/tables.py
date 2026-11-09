@@ -47,6 +47,40 @@ communication_events = sa.Table(
 
 __all__ = ["communication_events", "metadata"]
 
+communication_narrations = sa.Table(
+    "communication_narrations",
+    metadata,
+    sa.Column("result_event_id", sa.Text(), primary_key=True),
+    sa.Column("campaign_id", sa.Text(), nullable=False),
+    sa.Column("context", sa.Text(), nullable=False),
+    sa.Column("state", sa.Text(), nullable=False),
+    sa.Column("revision", sa.Integer(), nullable=False),
+    sa.Column("attempt_token", sa.Text()),
+    sa.Column("lease_until", sa.Float()),
+    sa.Column("updated_at", sa.Float(), nullable=False),
+    sa.Column("text", sa.Text()),
+    sa.Column("error", sa.Text()),
+)
+
+communication_narration_starts = sa.Table(
+    "communication_narration_starts",
+    metadata,
+    sa.Column("token", sa.Text(), primary_key=True),
+    sa.Column("campaign_id", sa.Text(), nullable=False),
+    sa.Column("started_at", sa.Float(), nullable=False),
+)
+
+communication_narration_retries = sa.Table(
+    "communication_narration_retries",
+    metadata,
+    sa.Column("campaign_id", sa.Text(), primary_key=True),
+    sa.Column("actor_id", sa.Text(), primary_key=True),
+    sa.Column("key", sa.Text(), primary_key=True),
+    sa.Column("result_event_id", sa.Text(), nullable=False),
+    sa.Column("expected_revision", sa.Integer(), nullable=False),
+    sa.Column("created_at", sa.Float(), nullable=False),
+)
+
 sa.Index(
     "uq_communication_game_session_revision",
     communication_events.c.campaign_id,

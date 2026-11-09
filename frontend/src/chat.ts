@@ -92,6 +92,32 @@ export interface CheckResolvedEvent extends ChatEventBase {
   result: CheckResult;
 }
 
+export interface NarrationState {
+  result_event_id: string;
+  state: 'pending' | 'generating' | 'ready' | 'failed';
+  revision: number;
+  text: string | null;
+  error: string | null;
+}
+
+export interface NarrationChangedEvent extends ChatEventBase {
+  type: 'narration_changed';
+  narration: NarrationState;
+}
+
+export function isNarrationState(value: unknown): value is NarrationState {
+  return (
+    isRecord(value) &&
+    typeof value.result_event_id === 'string' &&
+    ['pending', 'generating', 'ready', 'failed'].includes(String(value.state)) &&
+    Number.isSafeInteger(value.revision) &&
+    (value.revision as number) >= 1 &&
+    (value.text === null || (typeof value.text === 'string' && [...value.text].length <= 4500)) &&
+    (value.error === null || value.error === 'retryable_provider_error') &&
+    (value.state !== 'ready' || typeof value.text === 'string')
+  );
+}
+
 export function newerQueueState(current: QueueState | null, incoming: QueueState): QueueState {
   return current === null || incoming.version > current.version ? incoming : current;
 }
@@ -101,7 +127,8 @@ export type ChatEvent =
   | ChatMemberJoinedEvent
   | GameSessionChangedEvent
   | QueueChangedEvent
-  | CheckResolvedEvent;
+  | CheckResolvedEvent
+  | NarrationChangedEvent;
 
 export interface ChatHistory {
   campaign_id: string;
@@ -110,6 +137,7 @@ export interface ChatHistory {
   game_session_state: GameSessionState;
   presence_state: PresenceState;
   queue_state: QueueState;
+  narration_events?: NarrationChangedEvent[];
 }
 
 export function isQueueState(value: unknown): value is QueueState {
@@ -182,7 +210,8 @@ export function isChatEvent(value: unknown): value is ChatEvent {
     value.type !== 'member_joined' &&
     value.type !== 'game_session_changed' &&
     value.type !== 'queue_changed' &&
-    value.type !== 'check_resolved'
+    value.type !== 'check_resolved' &&
+    value.type !== 'narration_changed'
   ) {
     return false;
   }
@@ -192,6 +221,7 @@ export function isChatEvent(value: unknown): value is ChatEvent {
     typeof value.sequence === 'number' &&
     (value.type !== 'game_session_changed' || isGameSessionState(value.game_session_state)) &&
     (value.type !== 'queue_changed' || isQueueState(value.queue_state)) &&
+    (value.type !== 'narration_changed' || isNarrationState(value.narration)) &&
     (value.type !== 'check_resolved' || isCheckResult(value.result))
   );
 }
@@ -212,5 +242,23 @@ export function mergeChatEvents(current: ChatEvent[], incoming: ChatEvent[]): Ch
       byId.set(event.event_id, event);
     }
   }
-  return [...byId.values()].sort((left, right) => left.sequence - right.sequence);
+  const latest = new Map<string, NarrationChangedEvent>();
+  for (const event of byId.values()) {
+    if (event.type !== 'narration_changed') continue;
+    const previous = latest.get(event.narration.result_event_id);
+    if (
+      !previous ||
+      (previous.narration.state !== 'ready' &&
+        event.narration.revision > previous.narration.revision)
+    ) {
+      latest.set(event.narration.result_event_id, event);
+    }
+  }
+  return [...byId.values()]
+    .filter(
+      (event) =>
+        event.type !== 'narration_changed' ||
+        latest.get(event.narration.result_event_id)?.event_id === event.event_id,
+    )
+    .sort((left, right) => left.sequence - right.sequence);
 }

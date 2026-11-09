@@ -72,4 +72,21 @@ class GameSessionNotifier:
                 .one()
             )
             payload = event_to_wire(_to_event(row))
+            pending = None
+            if row["kind"] == "check_resolved":
+                following = (
+                    session.execute(
+                        select(communication_events).where(
+                            communication_events.c.campaign_id == str(campaign_id),
+                            communication_events.c.sequence == row["sequence"] + 1,
+                            communication_events.c.kind == "narration_changed",
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if following is not None:
+                    pending = event_to_wire(_to_event(following))
         self.hub.broadcast(campaign_id, payload)
+        if pending is not None:
+            self.hub.broadcast(campaign_id, pending)

@@ -118,12 +118,30 @@ class CheckEventResponse(BaseModel):
     result: CheckResultBody
 
 
+class NarrationBody(BaseModel):
+    result_event_id: UUID
+    state: Literal["pending", "generating", "ready", "failed"]
+    revision: int
+    text: str | None
+    error: str | None
+
+
+class NarrationEventResponse(BaseModel):
+    type: Literal["narration_changed"]
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    narration: NarrationBody
+
+
 ChatEventResponse = Annotated[
     ChatMessageEventResponse
     | ChatMemberJoinedEventResponse
     | GameSessionEventResponse
     | QueueEventResponse
-    | CheckEventResponse,
+    | CheckEventResponse
+    | NarrationEventResponse,
     Field(discriminator="type"),
 ]
 
@@ -135,6 +153,8 @@ class ChatHistoryResponse(BaseModel):
     game_session_state: GameSessionStateBody
     presence_state: PresenceStateBody
     queue_state: QueueStateBody
+    narrations: list[NarrationBody] = []
+    narration_events: list[NarrationEventResponse] = []
 
 
 __all__ = [

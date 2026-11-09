@@ -553,3 +553,14 @@ body {
   min-height: 44px;
   margin: 0.25rem;
 }
+.chat__narration {
+  border-inline-start: 0.25rem solid #8e83cb;
+  background: light-dark(#f0edf8, #222034);
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.chat__narration button {
+  min-height: 44px;
+}

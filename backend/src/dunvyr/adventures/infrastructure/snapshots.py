@@ -9,12 +9,15 @@ from sqlalchemy.orm import Session
 
 from dunvyr.adventures.domain.package import (
     apply_check_outcome,
+    project_applied_public_outcome,
     project_initial_encounters,
     project_initial_map,
     project_initial_scene,
 )
 from dunvyr.adventures.infrastructure.package_loader import parse_package
 from dunvyr.adventures.public import (
+    AppliedPublicFact,
+    AppliedPublicOutcome,
     ArchetypeTemplate,
     AvailableEncounter,
     AvailableEncounterCatalog,
@@ -43,7 +46,7 @@ class SqlSnapshotReader:
 
     def apply_check(
         self, campaign_id: UUID, encounter_id: str, object_id: str, solution_id: str, success: bool
-    ) -> None:
+    ) -> AppliedPublicOutcome:
         content = self._session.execute(
             text("SELECT content FROM adventures_snapshots WHERE campaign_id=:id"),
             {"id": str(campaign_id)},
@@ -51,8 +54,9 @@ class SqlSnapshotReader:
         if content is None:
             raise ValueError("selection unavailable")
         package = parse_package(json.loads(content)).model_dump()
+        before = self._progression(campaign_id)
         progression = apply_check_outcome(
-            package, self._progression(campaign_id), encounter_id, object_id, solution_id, success
+            package, before, encounter_id, object_id, solution_id, success
         )
         self._session.execute(
             text(
@@ -60,6 +64,12 @@ class SqlSnapshotReader:
                 "ON CONFLICT(campaign_id) DO UPDATE SET content=:content"
             ),
             {"id": str(campaign_id), "content": json.dumps(progression, ensure_ascii=False)},
+        )
+        return AppliedPublicOutcome(
+            tuple(
+                AppliedPublicFact(kind, value)
+                for kind, value in project_applied_public_outcome(package, before, progression)
+            )
         )
 
     def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None:

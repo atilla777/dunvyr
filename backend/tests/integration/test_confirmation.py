@@ -41,7 +41,7 @@ def test_confirmation_replay_and_public_aftermath(client):
         "solutions"
     ]
     history = client.get(f"/api/campaigns/{cid}/chat/events").json()
-    fact = history["events"][-1]
+    fact = next(e for e in history["events"] if e["type"] == "check_resolved")
     assert fact["type"] == "check_resolved" and fact["result"] == result["result"]
     assert proposal not in str(fact) and "terminal-diagnostics-success" not in str(fact)
     assert client.get(f"/api/campaigns/{cid}/check-result").json()["result"] == result["result"]

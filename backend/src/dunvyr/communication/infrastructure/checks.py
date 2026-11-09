@@ -14,7 +14,9 @@ class CheckEventStager:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def stage(self, campaign_id: UUID, result: dict[str, object], now: datetime) -> UUID:
+    def stage(
+        self, campaign_id: UUID, result: dict[str, object], now: datetime, facts: tuple[str, ...]
+    ) -> UUID:
         event_id = uuid4()
         self.session.execute(
             communication_events.insert().values(
@@ -25,5 +27,10 @@ class CheckEventStager:
                 occurred_at=now.isoformat(),
                 content=json.dumps(result),
             )
+        )
+        from dunvyr.communication.infrastructure.narrations import NarrationRepository
+
+        NarrationRepository(self.session).stage(
+            campaign_id, event_id, result["success"] is True, facts, now
         )
         return event_id

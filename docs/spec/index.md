@@ -7,7 +7,7 @@
 - [Backend-скелет: toolchain, app-factory, миграции, тестовая архитектура](backend/skeleton.md)
 - [Гостевая идентичность: домен, сессии, REST-контракт, cookie, миграции](backend/identity.md)
 - [Кампании: домен, членство, REST и жизненный цикл встречи](backend/campaigns.md) — встреча: кандидат dunvyr-lbp.1, интеграция ожидается
-- [Communication: чат кампании в реальном времени, единый поток событий, WebSocket, доставка после commit, reconnect-протокол клиента](backend/communication.md)
+- [Communication: чат кампании, единый поток событий, WebSocket, reconnect и описание сохранённого исхода](backend/communication.md) — narration: кандидат dunvyr-lbp.7, интеграция ожидается
 - [Локальное приключение, закреплённая версия, сцена, карта и безопасный каталог испытаний](backend/adventures.md) — каталог: кандидат dunvyr-lbp.3, публикация ожидается
 - [Персонаж участника кампании](backend/characters.md) — кандидат dunvyr-kye.3, интеграция ожидается
 - [Очередь и подтверждение небоевого действия](backend/gameplay.md) — кандидат dunvyr-lbp.6, интеграция ожидается

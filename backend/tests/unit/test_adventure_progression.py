@@ -24,3 +24,20 @@ def test_authored_branch_changes_goal_scene_and_availability(success: bool) -> N
     assert progression["objects"]["terminal"] != "Экран терминала ещё светится."
     with pytest.raises(ValueError):
         apply(package, progression, "terminal-diagnostics", "terminal", "repair-terminal", success)
+
+
+def test_applied_public_outcome_contains_only_changed_visible_scene_data():
+    package = json.loads(
+        (Path(__file__).parents[3] / "adventures/last-shift/adventure.json").read_text()
+    )
+    project = getattr(domain, "project_applied_public_outcome", lambda *_: None)
+    result = project(
+        package,
+        {},
+        {
+            "facts": {"secret": True},
+            "objects": {"terminal": "Новый экран", "hidden-object": "Секрет"},
+            "goal": "Цель",
+        },
+    )
+    assert result == (("object_description", "Новый экран"), ("goal", "Цель"))

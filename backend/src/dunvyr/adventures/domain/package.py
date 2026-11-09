@@ -1,6 +1,6 @@
 """Semantic rules for a structurally validated adventure package."""
 
-from typing import Any
+from typing import Any, Literal
 
 
 def project_initial_map(package: dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +139,26 @@ def apply_check_outcome(
     objects.update({o["object_id"]: o["public_description"] for o in effects["object_updates"]})
     goal = effects["public_goal"] or progression.get("goal", package["initial_public_goal"])
     return {"facts": facts, "objects": objects, "goal": goal}
+
+
+def project_applied_public_outcome(
+    package: dict[str, Any], before: dict[str, Any], after: dict[str, Any]
+) -> tuple[tuple[Literal["object_description", "goal"], str], ...]:
+    """Capture changed visible descriptions and goal without scenario identifiers."""
+    scene = project_initial_scene(package)
+    old_objects = before.get("objects", {})
+    new_objects = after.get("objects", {})
+    result: list[tuple[Literal["object_description", "goal"], str]] = []
+    for obj in scene["objects"]:
+        old = old_objects.get(obj["id"], obj["description"])
+        new = new_objects.get(obj["id"], obj["description"])
+        if new != old:
+            result.append(("object_description", new))
+    old_goal = before.get("goal", package["initial_public_goal"])
+    new_goal = after.get("goal", package["initial_public_goal"])
+    if new_goal != old_goal:
+        result.append(("goal", new_goal))
+    return tuple(result)
 
 
 def _unique(items: list[dict[str, Any]], label: str) -> set[str]:

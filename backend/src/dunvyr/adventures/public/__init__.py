@@ -1,7 +1,7 @@
 """Minimal immutable templates for character creation, not scenario data."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 
@@ -81,7 +81,18 @@ class AvailableEncounterCatalogReader(Protocol):
     def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class AppliedPublicFact:
+    kind: Literal["object_description", "goal"]
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedPublicOutcome:
+    facts: tuple[AppliedPublicFact, ...]
+
+
 class AdventureCheckParticipant(Protocol):
     def apply_check(
         self, campaign_id: UUID, encounter_id: str, object_id: str, solution_id: str, success: bool
-    ) -> None: ...
+    ) -> AppliedPublicOutcome: ...

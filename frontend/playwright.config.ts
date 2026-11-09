@@ -59,6 +59,9 @@ export default defineConfig({
         DUNVYR_DATABASE_URL: `sqlite+pysqlite:///${join(databaseDirectory, 'e2e.db')}`,
         DUNVYR_AUTO_MIGRATE: '1',
         DUNVYR_ALLOWED_ORIGINS: `http://${LOOPBACK}:${frontendPort}`,
+        // Never inherit a live provider into browser checks.
+        DUNVYR_NARRATION_PROVIDER: 'fake',
+        DUNVYR_NARRATION_FAKE_FAIL_FIRST: process.env.DUNVYR_E2E_NARRATION_FAIL_FIRST ?? '0',
       },
       url: `http://${LOOPBACK}:${backendPort}/health`,
       reuseExistingServer: false,

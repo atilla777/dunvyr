@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { fetchChatHistory } from './api';
+import { NarrationEntry } from './NarrationEntry';
 import {
   isGameSessionState,
   isPresenceState,
   isQueueState,
+  isChatEvent,
   mergeChatEvents,
   type ChatEvent,
   type ChatMember,
@@ -204,7 +206,10 @@ export function ChatPanel({
           hasSnapshot.current = true;
           if (onCheckChangedRef.current) onCheckChangedRef.current();
           else onProposalsChangedRef.current?.();
-          acceptEvents(history.events, true);
+          acceptEvents(
+            [...history.events, ...(history.narration_events ?? [])].filter(isChatEvent),
+            true,
+          );
           setHistoryStatus('ready');
         } catch (error) {
           if (active && !signal.aborted) setHistoryStatus('error');
@@ -238,6 +243,14 @@ export function ChatPanel({
     }
     setDraft('');
     setError(null);
+  }
+
+  async function refreshNarrations() {
+    const history = await fetchChatHistory(campaignId, lastSequence.current);
+    acceptEvents(
+      [...history.events, ...(history.narration_events ?? [])].filter(isChatEvent),
+      true,
+    );
   }
 
   const historyMessage =
@@ -280,6 +293,14 @@ export function ChatPanel({
           ) : event.type === 'member_joined' ? (
             <li key={event.event_id} className="chat__system">
               {event.member.nickname} присоединился к кампании
+            </li>
+          ) : event.type === 'narration_changed' ? (
+            <li key={event.event_id}>
+              <NarrationEntry
+                campaignId={campaignId}
+                narration={event.narration}
+                onRefresh={refreshNarrations}
+              />
             </li>
           ) : event.type === 'check_resolved' ? (
             <li key={event.event_id} className="chat__system">

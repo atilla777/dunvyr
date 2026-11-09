@@ -113,6 +113,60 @@ afterEach(() => {
 });
 
 describe('ChatPanel', () => {
+  it('restores narration outside the history page and ignores older live states without losing draft', async () => {
+    const ready = {
+      type: 'narration_changed' as const,
+      event_id: 'ready',
+      campaign_id: CAMPAIGN_ID,
+      sequence: 7,
+      occurred_at: '2026-11-09T12:00:00Z',
+      narration: {
+        result_event_id: 'result',
+        revision: 3,
+        state: 'ready' as const,
+        text: '<script>Plain public fact</script>',
+        error: null,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...history([messageEvent('recent', 208, OTHER_GUEST_ID, 'Боб', 'Позднее сообщение')]),
+          narration_events: [ready],
+        }),
+      ),
+    );
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('<script>Plain public fact</script>');
+    const input = screen.getByLabelText('Сообщение');
+    fireEvent.change(input, { target: { value: 'Черновик' } });
+    input.focus();
+    act(() =>
+      transports[0].handlers.onEvent({
+        ...ready,
+        event_id: 'old',
+        sequence: 6,
+        narration: { ...ready.narration, revision: 2, state: 'generating', text: null },
+      }),
+    );
+    await act(async () => {
+      await transports[0].handlers.onResync?.(new AbortController().signal);
+    });
+    expect(screen.getAllByText('Ведущий')).toHaveLength(1);
+    expect(screen.queryByText('Ведущий готовит описание…')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Черновик');
+    expect(input).toHaveFocus();
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Plain public fact');
+  });
+
   it('renders resolved checks in sequence once across live delivery and reconnect', async () => {
     const before = messageEvent('before', 1, OTHER_GUEST_ID, 'Боб', 'До броска');
     const after = messageEvent('after', 3, OTHER_GUEST_ID, 'Боб', 'После броска');

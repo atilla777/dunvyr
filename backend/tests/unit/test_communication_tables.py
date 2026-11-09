@@ -12,7 +12,12 @@ from dunvyr.communication.infrastructure import tables
 def test_communication_metadata_contains_only_owned_tables() -> None:
     names = set(tables.metadata.tables)
 
-    assert names == {"communication_events"}
+    assert names == {
+        "communication_events",
+        "communication_narrations",
+        "communication_narration_starts",
+        "communication_narration_retries",
+    }
     assert all(name.startswith("communication_") for name in names)
 
 

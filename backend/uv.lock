@@ -187,6 +187,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
     { name = "websockets" },
@@ -194,7 +195,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },
@@ -206,6 +206,7 @@ dev = [
 requires-dist = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
     { name = "uvicorn" },
     { name = "websockets", specifier = ">=17.4" },
@@ -213,7 +214,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx" },
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },

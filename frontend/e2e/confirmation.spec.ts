@@ -47,7 +47,13 @@ test('два участника видят результат и последс�
     const draft = guest.getByLabel('Сообщение');
     await draft.fill('Черновик остаётся');
     await draft.focus();
+    const confirmation = page.waitForResponse(
+      (response) => response.url().endsWith('/confirm') && response.request().method() === 'POST',
+    );
     await page.getByRole('button', { name: 'Подтвердить и бросить' }).click();
+    const confirmed = await confirmation;
+    expect(confirmed.status()).toBe(200);
+    const campaignId = new URL(confirmed.url()).pathname.split('/')[3];
     for (const viewer of [page, guest]) {
       const result = viewer.getByRole('region', { name: 'Результат проверки' });
       await expect(result).toContainText(/Успех|Неудача/);
@@ -58,6 +64,39 @@ test('два участника видят результат и последс�
     }
     await expect(draft).toHaveValue('Черновик остаётся');
     await expect(draft).toBeFocused();
+    const narration = page.locator('.chat__narration');
+    const guestNarration = guest.locator('.chat__narration');
+    const snapshot = async () =>
+      Promise.all(
+        ['check-result', 'scene', 'queue', 'proposals', 'character'].map(async (suffix) =>
+          (await page.request.get(`/api/campaigns/${campaignId}/${suffix}`)).json(),
+        ),
+      );
+    const beforeNarration = await snapshot();
+    if (process.env.DUNVYR_E2E_NARRATION_FAIL_FIRST === '1') {
+      await expect(narration).toContainText('Результат действия сохранён');
+      await expect(guestNarration).toContainText('Результат действия сохранён');
+      // Exercise the real server cooldown, not a test-only bypass.
+      await page.waitForTimeout(10_100);
+      const retryButton = narration.getByRole('button', { name: 'Повторить описание' });
+      await retryButton.focus();
+      await retryButton.press('Enter');
+    }
+    await expect(narration).toContainText(/Действие (не )?удалось\./);
+    await expect(guestNarration).toContainText(/Действие (не )?удалось\./);
+    await expect(narration).toHaveCount(1);
+    await expect(guestNarration).toHaveText((await narration.textContent())!);
+    expect(await snapshot()).toEqual(beforeNarration);
+    await expect(draft).toHaveValue('Черновик остаётся');
+    await expect(draft).toBeFocused();
+    const narrationHistory = await (
+      await page.request.get(`/api/campaigns/${campaignId}/chat/events`)
+    ).json();
+    expect(
+      narrationHistory.events.filter((event: { type: string }) => event.type === 'check_resolved'),
+    ).toHaveLength(1);
+    expect(narrationHistory.narrations).toHaveLength(1);
+    expect(narrationHistory.narrations[0].state).toBe('ready');
     await page.getByLabel('Сообщение').fill('После проверки');
     await page.getByRole('button', { name: 'Отправить' }).click();
     const stream = guest.getByRole('list', { name: 'Сообщения чата' });
@@ -75,6 +114,8 @@ test('два участника видят результат и последс�
     };
     await assertOrder();
     await guest.reload();
+    await expect(guestNarration).toHaveCount(1);
+    await expect(guestNarration).toContainText(/Действие (не )?удалось\./);
     await expect(guest.getByRole('region', { name: 'Результат проверки' })).toContainText(
       'Кубики:',
     );

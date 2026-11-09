@@ -1,4 +1,23 @@
 import type { ChatHistory } from './chat';
+import type { NarrationState } from './chat';
+
+export async function retryNarration(
+  campaignId: string,
+  state: NarrationState,
+  key: string,
+): Promise<NarrationState> {
+  const response = await fetch(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/narrations/${encodeURIComponent(state.result_event_id)}/retry`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify({ expected_revision: state.revision }),
+    },
+  );
+  if (!response.ok) throw new Error('Narration retry unavailable');
+  return (await response.json()) as NarrationState;
+}
 
 export interface Guest {
   id: string;

@@ -29,6 +29,7 @@ from dunvyr.communication.application.errors import (
 from dunvyr.communication.application.service import ChatService, SendMessage, SendMessageResult
 from dunvyr.communication.application.wire import event_to_wire
 from dunvyr.communication.domain.message import InvalidMessage
+from dunvyr.communication.infrastructure.narrations import NarrationRepository
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.config import OriginAllowList
 from dunvyr.communication.presentation.dependencies import get_chat_service, get_current_guest
@@ -85,7 +86,7 @@ async def _pump(
 ) -> None:
     while True:
         payload = await queue.get()
-        if payload.get("type") == "proposals_changed":
+        if payload.get("type") in {"proposals_changed", "narration_changed"}:
             guest = await run_in_threadpool(_resolve_guest, app, session_token)
             member = await run_in_threadpool(_find_member, app, campaign_id, guest_id)
             if guest is None or guest.id != guest_id or member is None:
@@ -327,6 +328,8 @@ def get_chat_history(
             "game_session_state": asdict(reader.read(campaign_id)),
             "presence_state": asdict(presence.read(campaign_id)),
             "queue_state": asdict(queue_reader.read(campaign_id)),
+            "narrations": NarrationRepository(session).list(campaign_id),
+            "narration_events": NarrationRepository(session).current_events(campaign_id),
         }
     )
 

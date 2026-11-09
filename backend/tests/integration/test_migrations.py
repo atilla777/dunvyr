@@ -45,7 +45,7 @@ def test_migration_head_is_recorded(migrated_engine: Engine) -> None:
     with migrated_engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert version == "0011"
+    assert version == "0012"
 
 
 @pytest.mark.integration
@@ -100,3 +100,33 @@ def test_campaigns_tables_use_owned_prefix_and_database_uniqueness(
         and foreign_key["options"].get("ondelete") == "CASCADE"
         for foreign_key in member_foreign_keys
     )
+
+
+@pytest.mark.integration
+def test_narration_migration_preserves_old_results_without_backfill(
+    migrated_engine: Engine,
+) -> None:
+    from alembic import command
+
+    from tests.integration.support import alembic_config
+
+    config = alembic_config(migrated_engine)
+    command.downgrade(config, "0011")
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO communication_events "
+                "(campaign_id, sequence, event_id, kind, occurred_at, content) "
+                "VALUES ('old-campaign', 1, 'old-result', 'check_resolved', '2026-11-08', '{}')"
+            )
+        )
+    command.upgrade(config, "head")
+    with migrated_engine.connect() as connection:
+        assert (
+            connection.execute(text("SELECT count(*) FROM communication_narrations")).scalar_one()
+            == 0
+        )
+        assert (
+            connection.execute(text("SELECT event_id FROM communication_events")).scalar_one()
+            == "old-result"
+        )

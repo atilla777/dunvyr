@@ -198,12 +198,22 @@ class CheckResolvedEvent:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class NarrationChangedEvent:
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    state_json: str
+
+
 ChatEvent = (
     MessageEvent
     | MemberJoinedEvent
     | GameSessionChangedEvent
     | QueueChangedEvent
     | CheckResolvedEvent
+    | NarrationChangedEvent
 )
 
 

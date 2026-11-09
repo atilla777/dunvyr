@@ -23,7 +23,9 @@ def file_client(tmp_path):
     engine = create_db_engine(f"sqlite+pysqlite:///{tmp_path / 'races.db'}")
     apply_migrations(engine)
     try:
-        with TestClient(create_app(engine=engine, presence_sweep_interval=3600)) as client:
+        with TestClient(
+            create_app(engine=engine, presence_sweep_interval=3600, narration_poll_interval=None)
+        ) as client:
             yield client
     finally:
         engine.dispose()

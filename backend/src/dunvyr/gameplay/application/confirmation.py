@@ -136,7 +136,7 @@ class ConfirmationService:
                     "total": resolved.total,
                     "success": resolved.success,
                 }
-                self.adventures.apply_check(
+                public_outcome = self.adventures.apply_check(
                     command.campaign_id,
                     proposal.encounter_id,
                     proposal.object_id,
@@ -164,7 +164,12 @@ class ConfirmationService:
                     },
                     result,
                 )
-                event_id = self.stager.stage(command.campaign_id, result, self.clock())
+                event_id = self.stager.stage(
+                    command.campaign_id,
+                    result,
+                    self.clock(),
+                    tuple(f.text for f in public_outcome.facts),
+                )
                 self.proposals.commit()
         except BaseException:
             self.proposals.rollback()

@@ -50,9 +50,11 @@ from dunvyr.communication.infrastructure.game_sessions import (
     GameSessionEventStager,
     GameSessionNotifier,
 )
+from dunvyr.communication.infrastructure.narration_worker import NarrationWorker
 from dunvyr.communication.infrastructure.proposals import ProposalNotifier
 from dunvyr.communication.infrastructure.queues import QueueEventStager
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
+from dunvyr.communication.presentation.narrations import router as narrations_router
 from dunvyr.communication.presentation.router import router as communication_router
 from dunvyr.gameplay.application.confirmation import ConfirmationService
 from dunvyr.gameplay.application.proposals import ProposalService
@@ -73,6 +75,7 @@ from dunvyr.infrastructure.db import (
     create_session_factory,
 )
 from dunvyr.infrastructure.migrations import run_migrations
+from dunvyr.narration.infrastructure.providers import configured_model
 from dunvyr.presentation.health import router as health_router
 
 _memory_locks: WeakKeyDictionary[Engine, Lock] = WeakKeyDictionary()
@@ -112,6 +115,7 @@ def create_app(
     presence_lease: float = 30.0,
     presence_grace: float = 5.0,
     presence_sweep_interval: float = 1.0,
+    narration_poll_interval: float | None = 0.25,
 ) -> FastAPI:
     """Build the application.
 
@@ -162,11 +166,18 @@ def create_app(
                 await asyncio.to_thread(reconcile_queues)
 
         task = asyncio.create_task(sweep())
+        narration_task = (
+            asyncio.create_task(app.state.narration_worker.run(stop, narration_poll_interval))
+            if narration_poll_interval is not None
+            else None
+        )
         try:
             yield
         finally:
             stop.set()
             await task
+            if narration_task is not None:
+                await narration_task
 
     app = FastAPI(title="Dunvyr", version=__version__, lifespan=lifespan)
 
@@ -179,7 +190,7 @@ def create_app(
         if (
             len(parts) >= 5
             and parts[1:3] == ["api", "campaigns"]
-            and parts[4] in {"proposals", "check-result"}
+            and parts[4] in {"proposals", "check-result", "narrations"}
         ):
             response.headers["Cache-Control"] = "private, no-store"
         return response
@@ -227,6 +238,11 @@ def create_app(
 
     realtime_hub = RealtimeHub()
     app.state.realtime_hub = realtime_hub
+    app.state.narration_clock = utc_now
+    app.state.narration_notify = GameSessionNotifier(app.state.session_factory, realtime_hub).notify
+    app.state.narration_worker = NarrationWorker(
+        app.state.session_factory, configured_model(), app.state.narration_notify, utc_now
+    )
     app.state.presence = PresenceRuntime(realtime_hub, lease=presence_lease, grace=presence_grace)
     app.state.presence_ping_interval = presence_ping_interval
     app.state.presence_pong_timeout = presence_pong_timeout
@@ -313,4 +329,5 @@ def create_app(
     app.include_router(adventures_router)
     app.include_router(characters_router)
     app.include_router(communication_router)
+    app.include_router(narrations_router)
     return app

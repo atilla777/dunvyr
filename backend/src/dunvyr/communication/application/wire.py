@@ -9,6 +9,7 @@ from dunvyr.communication.domain.events import (
     CheckResolvedEvent,
     GameSessionChangedEvent,
     MemberJoinedEvent,
+    NarrationChangedEvent,
     QueueChangedEvent,
 )
 
@@ -21,6 +22,8 @@ def event_to_wire(event: ChatEvent) -> dict[str, object]:
         "sequence": event.sequence,
         "occurred_at": event.occurred_at.isoformat(),
     }
+    if isinstance(event, NarrationChangedEvent):
+        return {"type": "narration_changed", **common, "narration": json.loads(event.state_json)}
     if isinstance(event, CheckResolvedEvent):
         return {"type": "check_resolved", **common, "result": json.loads(event.result_json)}
     if isinstance(event, QueueChangedEvent):

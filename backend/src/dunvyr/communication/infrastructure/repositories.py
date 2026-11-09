@@ -20,6 +20,7 @@ from dunvyr.communication.domain.events import (
     GameSessionChangedEvent,
     MemberJoinedEvent,
     MessageEvent,
+    NarrationChangedEvent,
     QueueChangedEvent,
 )
 from dunvyr.communication.domain.message import Message
@@ -115,6 +116,8 @@ class SqlAlchemyChatEventRepository:
                 queue_version=event.version,
                 queue_state=event.state_json,
             )
+        elif isinstance(event, NarrationChangedEvent):
+            values.update(kind="narration_changed", content=event.state_json)
         elif isinstance(event, CheckResolvedEvent):
             values.update(kind="check_resolved", content=event.result_json)
         else:
@@ -173,6 +176,14 @@ class SqlAlchemyChatEventRepository:
 
 
 def _to_event(row: RowMapping) -> ChatEvent:
+    if row["kind"] == "narration_changed":
+        return NarrationChangedEvent(
+            UUID(row["event_id"]),
+            UUID(row["campaign_id"]),
+            row["sequence"],
+            _from_text(row["occurred_at"]),
+            row["content"],
+        )
     if row["kind"] == "check_resolved":
         return CheckResolvedEvent(
             UUID(row["event_id"]),

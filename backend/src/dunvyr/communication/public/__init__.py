@@ -14,7 +14,9 @@ class ProposalNotifier(Protocol):
 
 
 class CheckEventStager(Protocol):
-    def stage(self, campaign_id: UUID, result: dict[str, object], now: datetime) -> UUID: ...
+    def stage(
+        self, campaign_id: UUID, result: dict[str, object], now: datetime, facts: tuple[str, ...]
+    ) -> UUID: ...
 
 
 __all__ = ["CheckEventStager", "ProposalNotifier"]

@@ -103,6 +103,29 @@ afterEach(() => {
 });
 
 describe('createChatTransport', () => {
+  it('buffers owner invalidations through resync and ignores other campaigns', async () => {
+    let resolve = () => {};
+    const changed = vi.fn();
+    const transport = createChatTransport(CAMPAIGN_ID, {
+      onEvent: vi.fn(),
+      onStatus: vi.fn(),
+      onProposalsChanged: changed,
+      onResync: () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    });
+    const socket = latestSocket();
+    socket.open();
+    await flushMicrotasks();
+    socket.message({ type: 'proposals_changed', campaign_id: CAMPAIGN_ID });
+    socket.message({ type: 'proposals_changed', campaign_id: 'other' });
+    expect(changed).not.toHaveBeenCalled();
+    resolve();
+    await flushMicrotasks();
+    expect(changed).toHaveBeenCalledTimes(1);
+    transport.close();
+  });
   it('pongs immediately during resync and buffers complete presence until the barrier', async () => {
     let resolve = () => {};
     const onPresence = vi.fn();

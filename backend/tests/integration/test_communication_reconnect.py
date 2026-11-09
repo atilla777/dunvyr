@@ -256,11 +256,12 @@ def test_subscribe_precedes_accept_and_failed_accept_unsubscribes(
 
     module = importlib.import_module("dunvyr.communication.presentation.router")
     campaign_id = uuid4()
+    guest_id = uuid4()
     calls: list[str] = []
 
     class Hub:
-        def subscribe(self, requested):
-            assert requested == campaign_id
+        def subscribe(self, requested, subscriber):
+            assert requested == campaign_id and subscriber == guest_id
             calls.append("subscribe")
             return "token", asyncio.Queue()
 
@@ -283,7 +284,7 @@ def test_subscribe_precedes_accept_and_failed_accept_unsubscribes(
         app=app, headers={"origin": ORIGIN}, cookies={}, accept=accept, close=AsyncMock()
     )
     monkeypatch.setattr(
-        module, "run_in_threadpool", AsyncMock(side_effect=[SimpleNamespace(id=uuid4()), object()])
+        module, "run_in_threadpool", AsyncMock(side_effect=[SimpleNamespace(id=guest_id), object()])
     )
     with pytest.raises(RuntimeError, match="handshake failed"):
         asyncio.run(module.campaign_chat(socket, campaign_id))

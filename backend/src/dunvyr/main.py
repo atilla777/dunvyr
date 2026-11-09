@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -48,11 +48,15 @@ from dunvyr.communication.infrastructure.game_sessions import (
     GameSessionEventStager,
     GameSessionNotifier,
 )
+from dunvyr.communication.infrastructure.proposals import ProposalNotifier
 from dunvyr.communication.infrastructure.queues import QueueEventStager
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.router import router as communication_router
+from dunvyr.gameplay.application.proposals import ProposalService
 from dunvyr.gameplay.application.service import QueueService
+from dunvyr.gameplay.infrastructure.proposals import SqlProposalUnitOfWork
 from dunvyr.gameplay.infrastructure.repository import SqlQueueUnitOfWork
+from dunvyr.gameplay.presentation.proposals import router as proposals_router
 from dunvyr.gameplay.presentation.router import router as queue_router
 from dunvyr.identity.application.rate_limit import RateLimitPolicy, SlidingWindowRateLimiter
 from dunvyr.identity.infrastructure.clock import utc_now
@@ -161,6 +165,17 @@ def create_app(
             await task
 
     app = FastAPI(title="Dunvyr", version=__version__, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def private_proposals(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        parts = request.url.path.split("/")
+        if len(parts) >= 5 and parts[1:3] == ["api", "campaigns"] and parts[4] == "proposals":
+            response.headers["Cache-Control"] = "private, no-store"
+        return response
+
     app.state.engine = resolved_engine
     app.state.session_factory = _app_sessions(resolved_engine)
     app.state.database_url = resolved_url
@@ -217,6 +232,17 @@ def create_app(
         policy=CampaignRateLimitPolicy(),
         clock=utc_now,
     )
+    app.state.proposal_rate_limiter = CampaignSlidingWindowRateLimiter(
+        policy=CampaignRateLimitPolicy(), clock=utc_now
+    )
+    app.state.proposal_service_factory = lambda session: ProposalService(
+        SqlProposalUnitOfWork(session),
+        SqlGameSessionUnitOfWork(session),
+        SqlCharacterEligibilityReader(CharacterRepository(session), SqlSnapshotReader(session)),
+        SqlSnapshotReader(session),
+        app.state.presence,
+        ProposalNotifier(realtime_hub),
+    )
     app.state.queue_service_factory = lambda session: QueueService(
         SqlQueueUnitOfWork(session),
         SqlGameSessionUnitOfWork(session),
@@ -261,6 +287,7 @@ def create_app(
     app.include_router(campaigns_router)
     app.include_router(game_sessions_router)
     app.include_router(queue_router)
+    app.include_router(proposals_router)
     app.include_router(adventures_router)
     app.include_router(characters_router)
     app.include_router(communication_router)

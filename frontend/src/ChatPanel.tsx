@@ -29,6 +29,7 @@ interface ChatPanelProps {
   onConnection?: (status: ChatConnectionStatus) => void;
   onPresenceState?: (state: PresenceState) => void;
   onQueueState?: (state: QueueState) => void;
+  onProposalsChanged?: () => void;
   transportFactory?: ChatTransportFactory;
 }
 
@@ -68,6 +69,7 @@ export function ChatPanel({
   onConnection,
   onPresenceState,
   onQueueState,
+  onProposalsChanged,
   transportFactory,
 }: ChatPanelProps) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -84,6 +86,7 @@ export function ChatPanel({
   const onConnectionRef = useRef(onConnection);
   const onPresenceStateRef = useRef(onPresenceState);
   const onQueueStateRef = useRef(onQueueState);
+  const onProposalsChangedRef = useRef(onProposalsChanged);
   const presenceRef = useRef<PresenceState | null>(null);
   useEffect(() => {
     onMemberJoinedRef.current = onMemberJoined;
@@ -93,7 +96,8 @@ export function ChatPanel({
     onConnectionRef.current = onConnection;
     onPresenceStateRef.current = onPresenceState;
     onQueueStateRef.current = onQueueState;
-  }, [onSessionState, onConnection, onPresenceState, onQueueState]);
+    onProposalsChangedRef.current = onProposalsChanged;
+  }, [onSessionState, onConnection, onPresenceState, onQueueState, onProposalsChanged]);
 
   /**
    * Merge server events exactly once per `event_id`. The same event can arrive
@@ -161,6 +165,9 @@ export function ChatPanel({
           setError(serverErrorMessage(code));
         }
       },
+      onProposalsChanged: () => {
+        if (active) onProposalsChangedRef.current?.();
+      },
       onResync: async (signal) => {
         const after = hasSnapshot.current ? lastSequence.current : undefined;
         try {
@@ -183,6 +190,7 @@ export function ChatPanel({
             lastSequence.current = Math.max(lastSequence.current, event.sequence);
           }
           hasSnapshot.current = true;
+          onProposalsChangedRef.current?.();
           acceptEvents(history.events, true);
           setHistoryStatus('ready');
         } catch (error) {

@@ -13,6 +13,8 @@ import type { ChatConnectionStatus } from './chatSocket';
 import { GameSessionPanel } from './GameSessionPanel';
 import { useGameSession } from './useGameSession';
 import { QueuePanel } from './QueuePanel';
+import { useProposals } from './useProposals';
+import { ProposalsPanel } from './ProposalsPanel';
 
 interface CampaignScreenProps {
   campaign: Campaign;
@@ -49,6 +51,15 @@ export function CampaignScreen({
     [],
   );
   const gameSession = useGameSession(campaign.id);
+  const proposals = useProposals(
+    campaign.id,
+    currentGuestId,
+    queue,
+    acceptQueue,
+    gameSession.state,
+    gameSession.refresh,
+    connection,
+  );
   const handleMemberJoined = useCallback((member: ChatMember) => {
     const nextMember = toCampaignMember(member);
     if (nextMember === null) {
@@ -105,7 +116,12 @@ export function CampaignScreen({
         <div>
           <SceneViewer campaignId={campaign.id} />
           <LocationMap campaignId={campaign.id} />
-          <EncounterCatalog campaignId={campaign.id} />
+          <EncounterCatalog
+            campaignId={campaign.id}
+            onPrepare={(selection) => proposals.execute('create', selection)}
+            prepareDisabled={!proposals.ready || (proposals.state?.proposals.length ?? 0) >= 20}
+          />
+          <ProposalsPanel campaignId={campaign.id} controller={proposals} />
           <QueuePanel
             campaignId={campaign.id}
             currentGuestId={currentGuestId}
@@ -125,12 +141,13 @@ export function CampaignScreen({
           onConnection={setConnection}
           onPresenceState={setPresence}
           onQueueState={acceptQueue}
+          onProposalsChanged={proposals.refresh}
           transportFactory={transportFactory}
         />
       </div>
 
       <AdventurePanel campaignId={campaign.id} isOrganizer={isOrganizer} />
-      <CharacterPanel campaignId={campaign.id} />
+      <CharacterPanel campaignId={campaign.id} onCharacter={proposals.setCharacter} />
 
       {isOrganizer && (
         <>

@@ -4,6 +4,95 @@ from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
+class ProposedAction:
+    id: str
+    owner: str
+    character_id: str
+    encounter_id: str
+    object_id: str
+    solution_id: str
+    fingerprint: str
+    cancelled: bool = False
+
+
+@dataclass(frozen=True)
+class ProposalCollection:
+    owner: str
+    proposals: tuple[ProposedAction, ...] = ()
+    version: int = 0
+
+    @property
+    def pending(self) -> tuple[ProposedAction, ...]:
+        return tuple(proposal for proposal in self.proposals if not proposal.cancelled)
+
+    def create(
+        self,
+        *,
+        proposal_id: str,
+        actor: str,
+        character_id: str,
+        encounter_id: str,
+        object_id: str,
+        solution_id: str,
+        fingerprint: str,
+    ) -> ProposalCollection:
+        if (
+            actor != self.owner
+            or len(self.pending) >= 20
+            or any(proposal.id == proposal_id for proposal in self.proposals)
+        ):
+            raise ValueError("invalid proposal creation")
+        proposal = ProposedAction(
+            proposal_id, actor, character_id, encounter_id, object_id, solution_id, fingerprint
+        )
+        return replace(self, proposals=(*self.proposals, proposal), version=self.version + 1)
+
+    def _pending_for_turn(self, proposal_id: str, actor: str, current: str) -> ProposedAction:
+        if actor != self.owner or current != actor:
+            raise ValueError("not the owner's turn")
+        proposal = next((p for p in self.pending if p.id == proposal_id), None)
+        if proposal is None:
+            raise ValueError("proposal unavailable")
+        return proposal
+
+    def _replace(self, proposal: ProposedAction) -> ProposalCollection:
+        return replace(
+            self,
+            proposals=tuple(proposal if p.id == proposal.id else p for p in self.proposals),
+            version=self.version + 1,
+        )
+
+    def edit(
+        self,
+        proposal_id: str,
+        actor: str,
+        current: str,
+        character_id: str,
+        encounter_id: str,
+        object_id: str,
+        solution_id: str,
+        fingerprint: str,
+    ) -> ProposalCollection:
+        proposal = self._pending_for_turn(proposal_id, actor, current)
+        if proposal.character_id != character_id:
+            raise ValueError("character does not match")
+        return self._replace(
+            replace(
+                proposal,
+                encounter_id=encounter_id,
+                object_id=object_id,
+                solution_id=solution_id,
+                fingerprint=fingerprint,
+            )
+        )
+
+    def cancel(self, proposal_id: str, actor: str, current: str) -> ProposalCollection:
+        return self._replace(
+            replace(self._pending_for_turn(proposal_id, actor, current), cancelled=True)
+        )
+
+
+@dataclass(frozen=True)
 class Queue:
     base_order: tuple[tuple[str, str], ...]
     round_order: tuple[str, ...]

@@ -13,7 +13,15 @@ const characteristics: Record<string, string> = {
   presence: 'Присутствие',
 };
 
-export function EncounterCatalog({ campaignId }: { campaignId: string }) {
+export function EncounterCatalog({
+  campaignId,
+  onPrepare,
+  prepareDisabled = false,
+}: {
+  campaignId: string;
+  onPrepare?: (selection: { encounter_id: string; object_id: string; solution_id: string }) => void;
+  prepareDisabled?: boolean;
+}) {
   const [view, setView] = useState<View>({ campaignId, status: 'loading' });
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -71,6 +79,21 @@ export function EncounterCatalog({ campaignId }: { campaignId: string }) {
                       <li key={solution.id}>
                         <strong>{solution.name}</strong>
                         <p>{solution.description}</p>
+                        {onPrepare && (
+                          <button
+                            type="button"
+                            disabled={prepareDisabled}
+                            onClick={() =>
+                              onPrepare({
+                                encounter_id: encounter.id,
+                                object_id: encounter.object_id,
+                                solution_id: solution.id,
+                              })
+                            }
+                          >
+                            Подготовить: {solution.name}
+                          </button>
+                        )}
                         <p>
                           Навык: {solution.check.skill_name} · Характеристика:{' '}
                           {characteristics[solution.check.characteristic] ??

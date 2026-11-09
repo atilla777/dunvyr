@@ -84,6 +84,83 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('CampaignScreen', () => {
+  it('refetches the private proposal snapshot on reconnect without remounting the chat', async () => {
+    let handlers: ChatTransportHandlers | undefined;
+    let version = 0;
+    const proposalUrl = `/api/campaigns/${campaign.id}/proposals`;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === proposalUrl) {
+        return jsonResponse({
+          version,
+          proposals:
+            version === 0
+              ? []
+              : [
+                  {
+                    id: 'p',
+                    character_id: 'c',
+                    availability: 'available',
+                    selection: {
+                      encounter_id: 'e',
+                      object_id: 'o',
+                      solution_id: 's',
+                      encounter_name: 'Терминал',
+                      solution_name: 'Проверить',
+                    },
+                  },
+                ],
+        });
+      }
+      if (url.includes('/chat/events'))
+        return jsonResponse({
+          campaign_id: campaign.id,
+          events: [],
+          last_sequence: 0,
+          game_session_state: { revision: 0, session: null },
+          presence_state: { epoch: 'epoch', revision: 0, online_guest_ids: [] },
+          queue_state: { version: 0, queue: null },
+        });
+      if (url.endsWith('/game-session')) return jsonResponse({ revision: 0, session: null });
+      if (url.endsWith('/character')) return jsonResponse(null);
+      if (url.endsWith('/encounters')) return jsonResponse({ status: 'waiting', catalog: null });
+      if (url.endsWith('/adventure')) return jsonResponse({ status: 'waiting', adventure: null });
+      if (url.endsWith('/adventures')) return jsonResponse({ adventures: [] });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const factory: ChatTransportFactory = (_id, next) => {
+      handlers = next;
+      void Promise.resolve()
+        .then(() => next.onResync?.(new AbortController().signal))
+        .then(() => next.onStatus('open'));
+      return { sendMessage: () => true, close: () => undefined };
+    };
+    render(
+      <CampaignScreen
+        campaign={campaign}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('Чат на связи');
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([url]) => url === proposalUrl)).toHaveLength(2),
+    );
+    const draft = screen.getByLabelText('Сообщение');
+    fireEvent.change(draft, { target: { value: 'черновик' } });
+    draft.focus();
+    act(() => handlers?.onStatus('reconnecting'));
+    version = 1;
+    await act(async () => {
+      await handlers?.onResync?.(new AbortController().signal);
+      handlers?.onStatus('open');
+    });
+    expect(await screen.findByText('Терминал — Проверить')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => url === proposalUrl)).toHaveLength(3);
+    expect(screen.getByLabelText('Сообщение')).toBe(draft);
+    expect(draft).toHaveValue('черновик');
+    expect(draft).toHaveFocus();
+  });
   it('shows definitive presence only while synchronized', async () => {
     let handlers: ChatTransportHandlers | undefined;
     const factory: ChatTransportFactory = (_id, next) => {

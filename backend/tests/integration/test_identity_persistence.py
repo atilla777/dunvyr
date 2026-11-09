@@ -48,7 +48,7 @@ def test_file_database_is_created_by_alembic_and_session_survives_restart(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
             tables = set(inspect(connection).get_table_names())
-        assert version == "0009"
+        assert version == "0010"
         assert {
             "identity_guests",
             "identity_sessions",

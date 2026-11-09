@@ -25,7 +25,13 @@ function initialAllocation(archetype: ArchetypeTemplate): CharacterAllocation {
   };
 }
 
-export function CharacterPanel({ campaignId }: { campaignId: string }) {
+export function CharacterPanel({
+  campaignId,
+  onCharacter,
+}: {
+  campaignId: string;
+  onCharacter?: (character: Character) => void;
+}) {
   const [character, setCharacter] = useState<Character | null>(null);
   const [templates, setTemplates] = useState<CharacterTemplates | null>(null);
   const [name, setName] = useState('');
@@ -99,7 +105,9 @@ export function CharacterPanel({ campaignId }: { campaignId: string }) {
     setBusy(true);
     setError('');
     try {
-      setCharacter(await createCharacter(campaignId, name, appearance, archetype, allocation));
+      const created = await createCharacter(campaignId, name, appearance, archetype, allocation);
+      setCharacter(created);
+      onCharacter?.(created);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : 'Не удалось создать персонажа.');
     } finally {

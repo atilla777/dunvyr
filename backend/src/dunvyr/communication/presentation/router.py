@@ -75,9 +75,22 @@ async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
     await websocket.send_json({"type": "error", "code": code, "detail": detail})
 
 
-async def _pump(websocket: WebSocket, queue: asyncio.Queue[dict[str, object]]) -> None:
+async def _pump(
+    websocket: WebSocket,
+    queue: asyncio.Queue[dict[str, object]],
+    app: FastAPI,
+    campaign_id: UUID,
+    guest_id: UUID,
+    session_token: str | None,
+) -> None:
     while True:
         payload = await queue.get()
+        if payload.get("type") == "proposals_changed":
+            guest = await run_in_threadpool(_resolve_guest, app, session_token)
+            member = await run_in_threadpool(_find_member, app, campaign_id, guest_id)
+            if guest is None or guest.id != guest_id or member is None:
+                await websocket.close(code=WS_POLICY_VIOLATION)
+                return
         await websocket.send_json(payload)
 
 
@@ -238,7 +251,7 @@ async def campaign_chat(websocket: WebSocket, campaign_id: UUID) -> None:
         return
 
     hub: RealtimeHub = app.state.realtime_hub
-    token, queue = hub.subscribe(campaign_id)
+    token, queue = hub.subscribe(campaign_id, guest.id)
     tasks: list[asyncio.Task[None]] = []
     connection_id = uuid4()
     registered = False
@@ -261,7 +274,18 @@ async def campaign_chat(websocket: WebSocket, campaign_id: UUID) -> None:
                 )
             )
         )
-        tasks.append(asyncio.create_task(_pump(websocket, queue)))
+        tasks.append(
+            asyncio.create_task(
+                _pump(
+                    websocket,
+                    queue,
+                    app,
+                    campaign_id,
+                    guest.id,
+                    websocket.cookies.get(SESSION_COOKIE_NAME),
+                )
+            )
+        )
         tasks.append(asyncio.create_task(_heartbeat(app, queue, heartbeat)))
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:

@@ -46,7 +46,12 @@ test('организатор выбирает приключение, участ
         encounters.getByText('Перезапустить служебный интерфейс', { exact: true }),
       ).toBeVisible();
       await expect(encounters.getByText('Выполнение действий пока недоступно.')).toBeVisible();
-      await expect(encounters.getByRole('button')).toHaveCount(0);
+      const preparation = encounters.getByRole('button', { name: /^Подготовить:/ });
+      await expect(preparation).toHaveCount(2);
+      await expect(preparation.nth(0)).toBeDisabled();
+      await expect(preparation.nth(1)).toBeDisabled();
+      // No other catalog controls, including execution actions, are exposed.
+      await expect(encounters.getByRole('button')).toHaveCount(2);
     }
     await expect(draft).toHaveValue('Черновик');
     await expect(draft).toBeFocused();

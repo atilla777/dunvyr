@@ -35,7 +35,7 @@ def test_chat_message_survives_a_server_restart(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
             tables = set(inspect(connection).get_table_names())
-        assert version == "0009"
+        assert version == "0010"
         assert "communication_events" in tables
 
         with TestClient(first_app) as client:

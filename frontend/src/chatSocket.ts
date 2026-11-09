@@ -7,6 +7,7 @@ export interface ChatTransportHandlers {
   onEvent: (event: ChatEvent) => void;
   onStatus: (status: ChatConnectionStatus) => void;
   onPresence?: (state: PresenceState) => void;
+  onProposalsChanged?: () => void;
   onServerError?: (code: string) => void;
   /**
    * Called after a lost connection is re-established, before live delivery
@@ -85,7 +86,9 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
   let ready = false;
   let stopped = false;
   let buffered: (
-    { kind: 'chat'; event: ChatEvent } | { kind: 'presence'; state: PresenceState }
+    | { kind: 'chat'; event: ChatEvent }
+    | { kind: 'presence'; state: PresenceState }
+    | { kind: 'proposals' }
   )[] = [];
 
   function clearTimers(): void {
@@ -177,7 +180,8 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
           for (const item of queued) {
             if (!active()) return;
             if (item.kind === 'chat') handlers.onEvent(item.event);
-            else handlers.onPresence?.(item.state);
+            else if (item.kind === 'presence') handlers.onPresence?.(item.state);
+            else handlers.onProposalsChanged?.();
           }
           if (active()) handlers.onStatus('open');
         })
@@ -228,6 +232,17 @@ export const createChatTransport: ChatTransportFactory = (campaignId, handlers) 
         armWatchdog();
         if (ready) handlers.onPresence?.(payload.presence_state);
         else buffered.push({ kind: 'presence', state: payload.presence_state });
+      } else if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'type' in payload &&
+        payload.type === 'proposals_changed' &&
+        'campaign_id' in payload &&
+        payload.campaign_id === campaignId
+      ) {
+        armWatchdog();
+        if (ready) handlers.onProposalsChanged?.();
+        else buffered.push({ kind: 'proposals' });
       } else if (isServerError(payload)) {
         armWatchdog();
         handlers.onServerError?.(payload.code);

@@ -1,6 +1,7 @@
 """Member-visible adventure state."""
 
 from collections.abc import Callable, Coroutine
+from dataclasses import asdict
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -23,7 +24,14 @@ class SafeValidationRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError as error:
-                raise HTTPException(status_code=422, detail="invalid_request") from error
+                headers = (
+                    {"Cache-Control": "private, no-store"}
+                    if request.url.path.endswith("/encounters")
+                    else None
+                )
+                raise HTTPException(
+                    status_code=422, detail="invalid_request", headers=headers
+                ) from error
 
         return safe_handler
 
@@ -144,6 +152,33 @@ def get_map(
         ) from error
     response.headers["Cache-Control"] = "private, no-store"
     return {"status": "ready" if map_ else "waiting", "map": map_}
+
+
+@router.get("/{campaign_id}/encounters")
+def get_encounters(
+    campaign_id: UUID,
+    request: Request,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, object]:
+    factory: Callable[[Session], AdventureReader] = request.app.state.adventure_reader_factory
+    headers = {"Cache-Control": "private, no-store"}
+    try:
+        catalog = factory(session).encounters(campaign_id, guest_id(request, session))
+    except HTTPException as error:
+        error.headers = {**(error.headers or {}), **headers}
+        raise
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden", headers=headers) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=500, detail="encounters_unavailable", headers=headers
+        ) from error
+    response.headers.update(headers)
+    return {
+        "status": "ready" if catalog is not None else "waiting",
+        "catalog": asdict(catalog) if catalog else None,
+    }
 
 
 @router.get("/{campaign_id}/scene/resources/{resource_id}")

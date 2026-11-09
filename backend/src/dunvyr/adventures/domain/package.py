@@ -6,7 +6,7 @@ from typing import Any
 def project_initial_map(package: dict[str, Any]) -> dict[str, Any]:
     """Expose explicit knowledge only; unknown targets never carry identity."""
     initial = package["initial_location_id"]
-    knowledge = package["initial_knowledge"] if package["schema_version"] == 2 else {}
+    knowledge = package["initial_knowledge"] if package["schema_version"] in (2, 3) else {}
     known_locations = {initial, *knowledge.get("discovered_location_ids", [])}
     known_exits = set(knowledge.get("known_exit_ids", []))
     locations = []
@@ -61,6 +61,52 @@ def project_initial_scene(package: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def project_initial_encounters(package: dict[str, Any], fingerprint: str) -> dict[str, Any]:
+    """Project only currently obvious solutions; no outcome or condition data escapes."""
+    result: dict[str, Any] = {
+        "fingerprint": fingerprint,
+        "current_location_id": package["initial_location_id"],
+        "encounters": [],
+    }
+    if package["schema_version"] != 3:
+        return result
+    facts = {fact["id"]: fact["initial_value"] for fact in package["facts"]}
+    conditions = {condition["id"]: condition for condition in package["conditions"]}
+    skills = {skill["id"]: skill for skill in package["skills"]}
+    for encounter in package["encounters"]:
+        solutions = []
+        for solution in encounter["solutions"]:
+            if not all(
+                facts[conditions[id_]["fact_id"]] == conditions[id_]["expected"]
+                for id_ in solution["condition_ids"]
+            ):
+                continue
+            skill = skills[solution["check"]["skill_id"]]
+            solutions.append(
+                {
+                    "id": solution["id"],
+                    "name": solution["name"],
+                    "description": solution["public_description"],
+                    "check": {
+                        "skill_id": skill["id"],
+                        "skill_name": skill["name"],
+                        "characteristic": skill["characteristic"],
+                        "difficulty": solution["check"]["difficulty"],
+                    },
+                }
+            )
+        result["encounters"].append(
+            {
+                "id": encounter["id"],
+                "object_id": encounter["object_id"],
+                "name": encounter["name"],
+                "description": encounter["public_description"],
+                "solutions": solutions,
+            }
+        )
+    return result
+
+
 def _unique(items: list[dict[str, Any]], label: str) -> set[str]:
     ids = [item["id"] for item in items]
     if len(ids) != len(set(ids)):
@@ -96,7 +142,7 @@ def validate_references(package: dict[str, Any]) -> None:
                 or exit_["object_id"] not in local_objects
             ):
                 raise ValueError(f"invalid exit reference in {location['id']}")
-    if package["schema_version"] == 2:
+    if package["schema_version"] in (2, 3):
         knowledge = package["initial_knowledge"]
         discovered = knowledge["discovered_location_ids"]
         known_exits = knowledge["known_exit_ids"]
@@ -116,3 +162,56 @@ def validate_references(package: dict[str, Any]) -> None:
                     location["id"] not in known_rooms or exit_["object_id"] not in visible
                 ):
                     raise ValueError("known exit has unknown source or hidden label")
+    if package["schema_version"] == 3:
+        _validate_encounters(package, skill_ids)
+
+
+def _validate_encounters(package: dict[str, Any], skill_ids: set[str]) -> None:
+    facts = {fact["id"]: fact["initial_value"] for fact in package["facts"]}
+    _unique(package["facts"], "fact")
+    _unique(package["conditions"], "condition")
+    outcome_ids = _unique(package["outcomes"], "outcome")
+    _unique(package["encounters"], "encounter")
+    conditions = {condition["id"]: condition for condition in package["conditions"]}
+    if any(condition["fact_id"] not in facts for condition in conditions.values()):
+        raise ValueError("unknown condition fact")
+    initial = next(
+        loc for loc in package["locations"] if loc["id"] == package["initial_location_id"]
+    )
+    visible = {obj["id"] for obj in initial["objects"] if obj["visibility"] == "visible"}
+    for outcome in package["outcomes"]:
+        effects = outcome["effects"]
+        assigned = [item["fact_id"] for item in effects["set_facts"]]
+        updated = [item["object_id"] for item in effects["object_updates"]]
+        if len(assigned) != len(set(assigned)) or not set(assigned) <= facts.keys():
+            raise ValueError("invalid fact assignments")
+        if len(updated) != len(set(updated)) or not set(updated) <= visible:
+            raise ValueError("invalid object updates")
+    solution_ids: set[str] = set()
+    available = False
+    for encounter in package["encounters"]:
+        if encounter["location_id"] != initial["id"] or encounter["object_id"] not in visible:
+            raise ValueError("invalid encounter location or object")
+        for solution in encounter["solutions"]:
+            if solution["id"] in solution_ids:
+                raise ValueError("duplicate solution ID")
+            solution_ids.add(solution["id"])
+            ids = solution["condition_ids"]
+            if len(ids) != len(set(ids)) or not set(ids) <= conditions.keys():
+                raise ValueError("invalid solution conditions")
+            expected: dict[str, bool] = {}
+            for id_ in ids:
+                condition = conditions[id_]
+                fact_id = condition["fact_id"]
+                if fact_id in expected and expected[fact_id] != condition["expected"]:
+                    raise ValueError("contradictory conditions")
+                expected[fact_id] = condition["expected"]
+            if solution["check"]["skill_id"] not in skill_ids:
+                raise ValueError("unknown skill")
+            success = solution["success_outcome_id"]
+            failure = solution["failure_outcome_id"]
+            if success == failure or not {success, failure} <= outcome_ids:
+                raise ValueError("invalid outcomes")
+            available |= all(facts[id_] == value for id_, value in expected.items())
+    if not available:
+        raise ValueError("no initially available solution")

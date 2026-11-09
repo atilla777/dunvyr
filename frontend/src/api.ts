@@ -83,6 +83,33 @@ export function fetchLocationMap(campaignId: string): Promise<MapState> {
   return adventureRequest(campaignId, 'map');
 }
 
+export interface EncounterCatalogData {
+  fingerprint: string;
+  current_location_id: string;
+  encounters: {
+    id: string;
+    object_id: string;
+    name: string;
+    description: string;
+    solutions: {
+      id: string;
+      name: string;
+      description: string;
+      check: { skill_id: string; skill_name: string; characteristic: string; difficulty: number };
+    }[];
+  }[];
+}
+
+export type EncounterCatalogState =
+  { status: 'waiting'; catalog: null } | { status: 'ready'; catalog: EncounterCatalogData };
+
+export function fetchEncounterCatalog(
+  campaignId: string,
+  signal?: AbortSignal,
+): Promise<EncounterCatalogState> {
+  return adventureRequest(campaignId, 'encounters', undefined, signal);
+}
+
 export function sceneImageUrl(campaignId: string, id: string): string {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/scene/resources/${encodeURIComponent(id)}`;
 }
@@ -96,11 +123,17 @@ export class AdventureError extends Error {
   }
 }
 
-async function adventureRequest<T>(campaignId: string, suffix: string, body?: object): Promise<T> {
+async function adventureRequest<T>(
+  campaignId: string,
+  suffix: string,
+  body?: object,
+  signal?: AbortSignal,
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/${suffix}`, {
       credentials: 'same-origin',
+      signal,
       ...(body === undefined
         ? {}
         : {

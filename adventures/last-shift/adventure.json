@@ -1,9 +1,9 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "last-shift",
   "title": "Последняя смена",
   "summary": "Группа прибывает в исследовательский комплекс, чтобы выяснить, куда исчез персонал.",
-  "edition": "1.0",
+  "edition": "1.1",
   "skills": [
     {
       "id": "repair",
@@ -115,6 +115,64 @@
     "discovered_location_ids": ["reception"],
     "known_exit_ids": ["airlock-reception", "airlock-unknown"]
   },
+  "initial_public_goal": "Проверить состояние терминала в приёмном шлюзе.",
+  "facts": [
+    {"id": "terminal-inspected", "initial_value": false},
+    {"id": "terminal-stable", "initial_value": false}
+  ],
+  "conditions": [
+    {"id": "terminal-uninspected", "fact_id": "terminal-inspected", "expected": false}
+  ],
+  "outcomes": [
+    {
+      "id": "terminal-diagnostics-success",
+      "effects": {
+        "set_facts": [{"fact_id": "terminal-inspected", "value": true}, {"fact_id": "terminal-stable", "value": true}],
+        "object_updates": [{"object_id": "terminal", "public_description": "Диагностика завершена; интерфейс терминала работает устойчиво."}],
+        "public_goal": "Осмотреть остальные видимые объекты приёмного шлюза."
+      }
+    },
+    {
+      "id": "terminal-diagnostics-failure",
+      "effects": {
+        "set_facts": [{"fact_id": "terminal-inspected", "value": true}],
+        "object_updates": [{"object_id": "terminal", "public_description": "Диагностика не восстановила интерфейс; экран показывает сообщение о неисправности."}],
+        "public_goal": "Продолжить осмотр видимых объектов приёмного шлюза."
+      }
+    }
+  ],
+  "encounters": [
+    {
+      "id": "terminal-diagnostics",
+      "kind": "noncombat",
+      "location_id": "airlock",
+      "object_id": "terminal",
+      "name": "Нестабильный терминал",
+      "public_description": "Экран светится, но диагностический интерфейс завис. Можно проверить соединения или перезапустить служебный интерфейс.",
+      "solutions": [
+        {
+          "id": "repair-terminal",
+          "name": "Проверить соединения терминала",
+          "public_description": "Проверить соединения терминала.",
+          "visibility": "obvious",
+          "condition_ids": ["terminal-uninspected"],
+          "check": {"skill_id": "repair", "difficulty": 5},
+          "success_outcome_id": "terminal-diagnostics-success",
+          "failure_outcome_id": "terminal-diagnostics-failure"
+        },
+        {
+          "id": "restart-terminal",
+          "name": "Перезапустить служебный интерфейс",
+          "public_description": "Перезапустить служебный интерфейс.",
+          "visibility": "obvious",
+          "condition_ids": ["terminal-uninspected"],
+          "check": {"skill_id": "hacking", "difficulty": 5},
+          "success_outcome_id": "terminal-diagnostics-success",
+          "failure_outcome_id": "terminal-diagnostics-failure"
+        }
+      ]
+    }
+  ],
   "locations": [
     {
       "id": "airlock",

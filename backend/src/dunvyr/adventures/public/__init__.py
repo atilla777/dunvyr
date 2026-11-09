@@ -43,3 +43,39 @@ class PinnedTemplates:
 
 class PinnedTemplatesReader(Protocol):
     def templates(self, campaign_id: UUID) -> PinnedTemplates | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class EncounterCheck:
+    skill_id: str
+    skill_name: str
+    characteristic: str
+    difficulty: int
+
+
+@dataclass(frozen=True, slots=True)
+class AvailableSolution:
+    id: str
+    name: str
+    description: str
+    check: EncounterCheck
+
+
+@dataclass(frozen=True, slots=True)
+class AvailableEncounter:
+    id: str
+    object_id: str
+    name: str
+    description: str
+    solutions: tuple[AvailableSolution, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AvailableEncounterCatalog:
+    fingerprint: str
+    current_location_id: str
+    encounters: tuple[AvailableEncounter, ...]
+
+
+class AvailableEncounterCatalogReader(Protocol):
+    def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None: ...

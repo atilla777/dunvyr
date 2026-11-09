@@ -6,6 +6,7 @@ import { AdventurePanel } from './AdventurePanel';
 import { CharacterPanel } from './CharacterPanel';
 import { SceneViewer } from './SceneViewer';
 import { LocationMap } from './LocationMap';
+import { EncounterCatalog } from './EncounterCatalog';
 import type { ChatMember, PresenceState } from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 import type { ChatConnectionStatus } from './chatSocket';
@@ -98,6 +99,7 @@ export function CampaignScreen({
         <div>
           <SceneViewer campaignId={campaign.id} />
           <LocationMap campaignId={campaign.id} />
+          <EncounterCatalog campaignId={campaign.id} />
         </div>
         <ChatPanel
           campaignId={campaign.id}

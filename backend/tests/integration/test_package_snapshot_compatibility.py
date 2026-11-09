@@ -16,6 +16,33 @@ from dunvyr.adventures.infrastructure.snapshots import SqlSnapshotReader
 
 
 @pytest.mark.integration
+def test_historical_v2_snapshot_is_canonical_and_preserves_consumers(
+    migrated_engine: Engine, tmp_path: Path
+) -> None:
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "last-shift-v2.json.gz.b64"
+    content = gzip.decompress(base64.b64decode(fixture.read_text())).decode("utf-8")
+    (tmp_path / "adventure.json").write_text(content)
+    image = Path(__file__).resolve().parents[3] / "adventures" / "last-shift" / "airlock.png"
+    (tmp_path / "airlock.png").write_bytes(image.read_bytes())
+    loaded = load_package(tmp_path)
+    assert loaded.content == content
+    assert loaded.fingerprint == "48d374545f4b9432549798b21c59c68ef8f48d9ebbd45b454459de1fb8fb4087"
+    campaign_id = uuid4()
+    with Session(migrated_engine) as session:
+        reader = SqlSnapshotReader(session)
+        assert (
+            reader.pin(campaign_id, "last-shift", loaded.fingerprint, "old", "old", content, {})
+            == "created"
+        )
+        scene = reader.scene(campaign_id)
+        map_ = reader.map(campaign_id)
+        templates = reader.templates(campaign_id)
+        assert scene is not None and scene["name"] == "Приёмный шлюз"
+        assert map_ is not None and map_["current_location_id"] == "airlock"
+        assert templates is not None and any(skill.id == "repair" for skill in templates.skills)
+
+
+@pytest.mark.integration
 def test_historical_v1_snapshot_scene_is_read_without_catalog(
     migrated_engine: Engine, tmp_path: Path
 ) -> None:

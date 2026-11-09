@@ -34,6 +34,20 @@ test('организатор выбирает приключение, участ
     await page.getByRole('button', { name: 'Выбрать Последняя смена' }).click();
     await expect(page.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible({ timeout: 15000 });
+    for (const viewer of [page, guest]) {
+      const encounters = viewer.getByRole('region', { name: 'Испытания' });
+      await expect(encounters.getByRole('heading', { name: 'Нестабильный терминал' })).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(
+        encounters.getByText('Проверить соединения терминала', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        encounters.getByText('Перезапустить служебный интерфейс', { exact: true }),
+      ).toBeVisible();
+      await expect(encounters.getByText('Выполнение действий пока недоступно.')).toBeVisible();
+      await expect(encounters.getByRole('button')).toHaveCount(0);
+    }
     await expect(draft).toHaveValue('Черновик');
     await expect(draft).toBeFocused();
     expect(

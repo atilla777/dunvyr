@@ -10,6 +10,20 @@ from dunvyr.adventures.domain import package as domain
 
 
 @pytest.mark.unit
+def test_v3_map_preserves_v2_initial_knowledge_and_validation():
+    path = Path(__file__).resolve().parents[3] / "adventures/last-shift/adventure.json"
+    data = json.loads(path.read_text())
+    data["schema_version"] = 3
+    data["initial_knowledge"]["discovered_location_ids"] = ["vault"]
+    assert any(
+        location["id"] == "vault" for location in domain.project_initial_map(data)["locations"]
+    )
+    data["initial_knowledge"]["discovered_location_ids"] = ["missing"]
+    with pytest.raises(ValueError, match="invalid discovered locations"):
+        domain.validate_references(data)
+
+
+@pytest.mark.unit
 def test_initial_map_does_not_follow_known_exits_or_reveal_hidden_destinations():
     path = Path(__file__).resolve().parents[3] / "adventures/last-shift/adventure.json"
     data = json.loads(path.read_text())

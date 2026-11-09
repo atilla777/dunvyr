@@ -7,11 +7,19 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from dunvyr.adventures.domain.package import project_initial_map, project_initial_scene
+from dunvyr.adventures.domain.package import (
+    project_initial_encounters,
+    project_initial_map,
+    project_initial_scene,
+)
 from dunvyr.adventures.infrastructure.package_loader import parse_package
 from dunvyr.adventures.public import (
     ArchetypeTemplate,
+    AvailableEncounter,
+    AvailableEncounterCatalog,
+    AvailableSolution,
     Characteristics,
+    EncounterCheck,
     PinnedTemplates,
     SkillRating,
     SkillTemplate,
@@ -24,6 +32,41 @@ class SqlSnapshotReader:
 
     def release_read(self) -> None:
         self._session.rollback()
+
+    def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None:
+        row = self._session.execute(
+            text("SELECT content, fingerprint FROM adventures_snapshots WHERE campaign_id = :id"),
+            {"id": str(campaign_id)},
+        ).one_or_none()
+        if row is None:
+            return None
+        try:
+            package = parse_package(json.loads(row.content)).model_dump()
+            projection = project_initial_encounters(package, row.fingerprint)
+            return AvailableEncounterCatalog(
+                fingerprint=projection["fingerprint"],
+                current_location_id=projection["current_location_id"],
+                encounters=tuple(
+                    AvailableEncounter(
+                        id=encounter["id"],
+                        object_id=encounter["object_id"],
+                        name=encounter["name"],
+                        description=encounter["description"],
+                        solutions=tuple(
+                            AvailableSolution(
+                                id=solution["id"],
+                                name=solution["name"],
+                                description=solution["description"],
+                                check=EncounterCheck(**solution["check"]),
+                            )
+                            for solution in encounter["solutions"]
+                        ),
+                    )
+                    for encounter in projection["encounters"]
+                ),
+            )
+        except (ValueError, KeyError, TypeError, RecursionError) as error:
+            raise ValueError("invalid snapshot") from error
 
     def scene(self, campaign_id: UUID) -> dict[str, object] | None:
         content = self._session.execute(
@@ -90,10 +133,10 @@ class SqlSnapshotReader:
         if (
             not isinstance(data, dict)
             or type(data.get("schema_version")) is not int
-            or data["schema_version"] not in (1, 2)
+            or data["schema_version"] not in (1, 2, 3)
         ):
             raise ValueError("unsupported snapshot schema version")
-        if data["schema_version"] == 2:
+        if data["schema_version"] in (2, 3):
             try:
                 data = parse_package(data).model_dump()
             except ValueError as error:

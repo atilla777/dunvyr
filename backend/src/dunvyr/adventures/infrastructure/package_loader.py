@@ -118,6 +118,73 @@ class PackageV2(Package):
     initial_knowledge: InitialKnowledge
 
 
+class Fact(StrictModel):
+    id: Id
+    initial_value: bool
+
+
+class Condition(StrictModel):
+    id: Id
+    fact_id: Id
+    expected: bool
+
+
+class FactAssignment(StrictModel):
+    fact_id: Id
+    value: bool
+
+
+class ObjectUpdate(StrictModel):
+    object_id: Id
+    public_description: Text
+
+
+class Effects(StrictModel):
+    set_facts: list[FactAssignment] = Field(max_length=100)
+    object_updates: list[ObjectUpdate] = Field(max_length=100)
+    public_goal: Text | None
+
+
+class Outcome(StrictModel):
+    id: Id
+    effects: Effects
+
+
+class Check(StrictModel):
+    skill_id: Id
+    difficulty: Annotated[int, Field(ge=0, le=20)]
+
+
+class Solution(StrictModel):
+    id: Id
+    name: Text
+    public_description: Text
+    visibility: Literal["obvious"]
+    condition_ids: list[Id] = Field(max_length=100)
+    check: Check
+    success_outcome_id: Id
+    failure_outcome_id: Id
+
+
+class Encounter(StrictModel):
+    id: Id
+    kind: Literal["noncombat"]
+    location_id: Id
+    object_id: Id
+    name: Text
+    public_description: Text
+    solutions: list[Solution] = Field(min_length=1, max_length=10)
+
+
+class PackageV3(PackageV2):
+    schema_version: Annotated[int, Field(ge=3, le=3)]
+    initial_public_goal: Text
+    facts: list[Fact] = Field(max_length=100)
+    conditions: list[Condition] = Field(max_length=100)
+    outcomes: list[Outcome] = Field(min_length=1, max_length=100)
+    encounters: list[Encounter] = Field(min_length=1, max_length=1)
+
+
 def parse_package(raw: Any) -> Package:
     if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int:
         raise ValueError("unsupported package schema")
@@ -126,6 +193,8 @@ def parse_package(raw: Any) -> Package:
         package = Package.model_validate(raw)
     elif version == 2:
         package = PackageV2.model_validate(raw)
+    elif version == 3:
+        package = PackageV3.model_validate(raw)
     else:
         raise ValueError("unsupported package schema")
     validate_references(package.model_dump())

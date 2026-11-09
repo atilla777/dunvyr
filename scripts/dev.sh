@@ -36,9 +36,14 @@ if ! command -v setsid >/dev/null 2>&1; then
 fi
 
 lan_ip=""
+lan_ips=()
 if command -v ip >/dev/null 2>&1; then
   lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null |
     awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')" || true
+  while IFS= read -r address; do
+    [[ -n "$address" ]] && lan_ips+=("$address")
+  done < <(ip -o -4 addr show up scope global 2>/dev/null |
+    awk '{ for (i = 1; i <= NF; i++) if ($i == "inet") { split($(i + 1), ip, "/"); print ip[1] } }')
 fi
 if [[ -z "$lan_ip" ]] && command -v hostname >/dev/null 2>&1; then
   lan_ip="$(hostname -I 2>/dev/null | awk '{ print $1 }')" || true
@@ -64,16 +69,15 @@ esac
 
 frontend_local_url="http://$display_host:$frontend_port"
 backend_local_url="http://$display_host:$backend_port/health"
-frontend_lan_url=""
-backend_lan_url=""
+lan_hosts=()
 if [[ "$show_lan" == true ]]; then
-  lan_host="$dev_host"
   if [[ "$bind_wildcard" == true ]]; then
-    lan_host="$lan_ip"
-  fi
-  if [[ -n "$lan_host" ]]; then
-    frontend_lan_url="http://$lan_host:$frontend_port"
-    backend_lan_url="http://$lan_host:$backend_port/health"
+    lan_hosts=("${lan_ips[@]}")
+    if [[ -n "$lan_ip" ]]; then
+      lan_hosts+=("$lan_ip")
+    fi
+  else
+    lan_hosts=("$dev_host")
   fi
 fi
 
@@ -82,16 +86,24 @@ fi
 # frontend origin of the page the user opened (LAN, loopback or localhost).
 allowed_origin_hosts=("127.0.0.1" "localhost")
 if [[ -n "$lan_ip" ]]; then
-  allowed_origin_hosts=("$lan_ip" "${allowed_origin_hosts[@]}")
+  lan_ips+=("$lan_ip")
 fi
 case "$dev_host" in
   localhost | 127.0.0.1 | ::1 | 0.0.0.0 | ::) ;;
-  *)
-    if [[ "$dev_host" != "$lan_ip" ]]; then
-      allowed_origin_hosts=("$dev_host" "${allowed_origin_hosts[@]}")
-    fi
-    ;;
+  *) lan_ips+=("$dev_host") ;;
 esac
+for address in "${lan_ips[@]}"; do
+  found=false
+  for host in "${allowed_origin_hosts[@]}"; do
+    if [[ "$host" == "$address" ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == false ]]; then
+    allowed_origin_hosts+=("$address")
+  fi
+done
 allowed_origins=""
 for host in "${allowed_origin_hosts[@]}"; do
   origin="http://$host:$frontend_port"
@@ -105,10 +117,21 @@ done
 printf '\nDunvyr dev\n'
 printf '  Frontend: %s\n' "$frontend_local_url"
 printf '  Backend:  %s\n' "$backend_local_url"
-if [[ -n "$frontend_lan_url" ]]; then
-  printf '  LAN:      %s\n' "$frontend_lan_url"
-  printf '            %s\n' "$backend_lan_url"
-elif [[ "$show_lan" == true ]]; then
+printed_lan_hosts=()
+for lan_host in "${lan_hosts[@]}"; do
+  found=false
+  for host in "${printed_lan_hosts[@]}"; do
+    if [[ "$host" == "$lan_host" ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]] && continue
+  printed_lan_hosts+=("$lan_host")
+  printf '  LAN:      http://%s:%s\n' "$lan_host" "$frontend_port"
+  printf '            http://%s:%s/health\n' "$lan_host" "$backend_port"
+done
+if [[ "$show_lan" == true ]] && (( ${#printed_lan_hosts[@]} == 0 )); then
   printf '  LAN:      адрес не определён; проверь сетевой интерфейс (ip addr)\n'
 fi
 

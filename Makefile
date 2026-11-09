@@ -61,6 +61,7 @@ lint:
 	cd $(FRONTEND) && $(MISE) npm run typecheck
 
 test-unit:
+	python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 	cd $(BACKEND) && $(MISE) uv run pytest -m unit $(PYTEST_CACHE_ARGS)
 	cd $(BACKEND) && $(MISE) uv run lint-imports
 	cd $(FRONTEND) && $(MISE) npm run test

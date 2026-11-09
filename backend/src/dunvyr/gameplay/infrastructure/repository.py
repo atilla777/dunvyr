@@ -56,6 +56,7 @@ class SqlQueueUnitOfWork:
             data["cursor"],
             tuple(data["skipped"]),
             data["version"],
+            data.get("completed", False),
         )
 
     def read(self, campaign_id: UUID) -> QueueState:

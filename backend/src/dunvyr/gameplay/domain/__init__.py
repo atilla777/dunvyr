@@ -4,6 +4,29 @@ from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
+class NoncombatCheckResult:
+    dice: tuple[int, ...]
+    total: int
+    success: bool
+    modifier: int = 0
+
+
+def resolve_noncombat_check(
+    characteristic: int, skill: int, dice: tuple[int, ...]
+) -> NoncombatCheckResult:
+    """Resolve noncombat-v1; dice originate from the server application adapter."""
+    if (
+        type(characteristic) is not int
+        or type(skill) is not int
+        or len(dice) != 4
+        or any(type(die) is not int or die not in (-1, 0, 1) for die in dice)
+    ):
+        raise ValueError("invalid noncombat check inputs")
+    total = characteristic + skill + sum(dice)
+    return NoncombatCheckResult(dice, total, total >= 5)
+
+
+@dataclass(frozen=True)
 class ProposedAction:
     id: str
     owner: str
@@ -13,6 +36,7 @@ class ProposedAction:
     solution_id: str
     fingerprint: str
     cancelled: bool = False
+    confirmed: bool = False
 
 
 @dataclass(frozen=True)
@@ -23,7 +47,7 @@ class ProposalCollection:
 
     @property
     def pending(self) -> tuple[ProposedAction, ...]:
-        return tuple(proposal for proposal in self.proposals if not proposal.cancelled)
+        return tuple(p for p in self.proposals if not p.cancelled and not p.confirmed)
 
     def create(
         self,
@@ -91,6 +115,11 @@ class ProposalCollection:
             replace(self._pending_for_turn(proposal_id, actor, current), cancelled=True)
         )
 
+    def confirm(self, proposal_id: str, actor: str, current: str) -> ProposalCollection:
+        return self._replace(
+            replace(self._pending_for_turn(proposal_id, actor, current), confirmed=True)
+        )
+
 
 @dataclass(frozen=True)
 class Queue:
@@ -100,10 +129,20 @@ class Queue:
     cursor: int = 0
     skipped: tuple[str, ...] = ()
     version: int = 1
+    completed: bool = False
 
     @property
     def current(self) -> str | None:
-        return self.round_order[self.cursor] if self.cursor < len(self.round_order) else None
+        return (
+            self.round_order[self.cursor]
+            if not self.completed and self.cursor < len(self.round_order)
+            else None
+        )
+
+    def complete(self, actor: str) -> Queue:
+        if self.completed or self.current != actor:
+            raise ValueError("completion requires the current player")
+        return replace(self, completed=True, version=self.version + 1)
 
     def swap(self, actor: str, target: str, online: set[str]) -> Queue:
         if (
@@ -119,6 +158,8 @@ class Queue:
         return replace(self, round_order=tuple(order), version=self.version + 1)
 
     def normalize(self, online: set[str]) -> Queue:
+        if self.completed:
+            return self
         order, cursor, skipped, round_number = (
             self.round_order,
             self.cursor,

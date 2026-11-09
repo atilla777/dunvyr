@@ -45,13 +45,15 @@ test('организатор выбирает приключение, участ
       await expect(
         encounters.getByText('Перезапустить служебный интерфейс', { exact: true }),
       ).toBeVisible();
-      await expect(encounters.getByText('Выполнение действий пока недоступно.')).toBeVisible();
+      await expect(viewer.getByText('Встреча ещё не началась')).toBeVisible();
+      await expect(viewer.getByLabel('Имя персонажа')).toBeVisible();
       const preparation = encounters.getByRole('button', { name: /^Подготовить:/ });
       await expect(preparation).toHaveCount(2);
       await expect(preparation.nth(0)).toBeDisabled();
       await expect(preparation.nth(1)).toBeDisabled();
-      // No other catalog controls, including execution actions, are exposed.
+      // Without a character or a running meeting nothing can be prepared or confirmed.
       await expect(encounters.getByRole('button')).toHaveCount(2);
+      await expect(viewer.getByRole('button', { name: 'Подтвердить и бросить' })).toHaveCount(0);
     }
     await expect(draft).toHaveValue('Черновик');
     await expect(draft).toBeFocused();
@@ -178,6 +180,15 @@ test('организатор выбирает приключение, участ
     await page.getByLabel('Архетип').selectOption('engineer');
     await page.getByRole('button', { name: 'Создать персонажа' }).click();
     await expect(page.getByRole('heading', { name: 'Инженер', exact: true })).toBeVisible();
+    for (const viewer of [page, guest]) {
+      const preparation = viewer
+        .getByRole('region', { name: 'Испытания', exact: true })
+        .getByRole('button', { name: /^Подготовить:/ });
+      await expect(preparation).toHaveCount(2);
+      await expect(preparation.nth(0)).toBeDisabled();
+      await expect(preparation.nth(1)).toBeDisabled();
+      await expect(viewer.getByRole('button', { name: 'Подтвердить и бросить' })).toHaveCount(0);
+    }
     await expect(guest.getByRole('button', { name: /Выбрать/ })).toHaveCount(0);
     await guest.reload();
     await expect(guest.getByText(/Версия: [a-f0-9]{64}/)).toBeVisible();

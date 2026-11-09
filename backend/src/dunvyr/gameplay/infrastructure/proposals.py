@@ -55,6 +55,8 @@ class SqlProposalUnitOfWork:
         if row is None:
             return None
         data = json.loads(row.response)
+        if "result" in data:
+            raise QueueError(409, "conflict")
         views = tuple(
             ProposalView(
                 p["id"],

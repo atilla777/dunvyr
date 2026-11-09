@@ -48,7 +48,7 @@ it('shows safe text and check metadata without execution controls', async () => 
   expect(
     screen.getByText(/Навык: Ремонт · Характеристика: Интеллект · Сложность: 5/),
   ).toBeInTheDocument();
-  expect(screen.getByText('Выполнение действий пока недоступно.')).toBeInTheDocument();
+  expect(screen.queryByText('Выполнение действий пока недоступно.')).not.toBeInTheDocument();
   expect(
     within(screen.getByRole('region', { name: 'Испытания' })).queryByRole('button'),
   ).toBeNull();

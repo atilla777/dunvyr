@@ -17,10 +17,12 @@ export function EncounterCatalog({
   campaignId,
   onPrepare,
   prepareDisabled = false,
+  revision = 0,
 }: {
   campaignId: string;
   onPrepare?: (selection: { encounter_id: string; object_id: string; solution_id: string }) => void;
   prepareDisabled?: boolean;
+  revision?: number;
 }) {
   const [view, setView] = useState<View>({ campaignId, status: 'loading' });
   const [retry, setRetry] = useState(0);
@@ -42,7 +44,7 @@ export function EncounterCatalog({
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [campaignId, retry]);
+  }, [campaignId, retry, revision]);
 
   const current: View = view.campaignId === campaignId ? view : { campaignId, status: 'loading' };
   return (
@@ -107,7 +109,6 @@ export function EncounterCatalog({
               ))}
             </ul>
           )}
-          <p>Выполнение действий пока недоступно.</p>
         </>
       )}
     </section>

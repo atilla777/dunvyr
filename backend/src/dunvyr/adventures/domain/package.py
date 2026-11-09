@@ -61,7 +61,9 @@ def project_initial_scene(package: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def project_initial_encounters(package: dict[str, Any], fingerprint: str) -> dict[str, Any]:
+def project_initial_encounters(
+    package: dict[str, Any], fingerprint: str, progression: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Project only currently obvious solutions; no outcome or condition data escapes."""
     result: dict[str, Any] = {
         "fingerprint": fingerprint,
@@ -71,6 +73,7 @@ def project_initial_encounters(package: dict[str, Any], fingerprint: str) -> dic
     if package["schema_version"] != 3:
         return result
     facts = {fact["id"]: fact["initial_value"] for fact in package["facts"]}
+    facts.update((progression or {}).get("facts", {}))
     conditions = {condition["id"]: condition for condition in package["conditions"]}
     skills = {skill["id"]: skill for skill in package["skills"]}
     for encounter in package["encounters"]:
@@ -105,6 +108,37 @@ def project_initial_encounters(package: dict[str, Any], fingerprint: str) -> dic
             }
         )
     return result
+
+
+def apply_check_outcome(
+    package: dict[str, Any],
+    progression: dict[str, Any],
+    encounter_id: str,
+    object_id: str,
+    solution_id: str,
+    success: bool,
+) -> dict[str, Any]:
+    """Apply a currently available authored branch without exposing outcome identifiers."""
+    catalog = project_initial_encounters(package, "", progression)
+    available = any(
+        e["id"] == encounter_id
+        and e["object_id"] == object_id
+        and any(s["id"] == solution_id for s in e["solutions"])
+        for e in catalog["encounters"]
+    )
+    if not available:
+        raise ValueError("selection unavailable")
+    encounter = next(e for e in package["encounters"] if e["id"] == encounter_id)
+    solution = next(s for s in encounter["solutions"] if s["id"] == solution_id)
+    outcome_id = solution["success_outcome_id" if success else "failure_outcome_id"]
+    effects = next(o["effects"] for o in package["outcomes"] if o["id"] == outcome_id)
+    facts = {f["id"]: f["initial_value"] for f in package["facts"]}
+    facts.update(progression.get("facts", {}))
+    facts.update({f["fact_id"]: f["value"] for f in effects["set_facts"]})
+    objects = dict(progression.get("objects", {}))
+    objects.update({o["object_id"]: o["public_description"] for o in effects["object_updates"]})
+    goal = effects["public_goal"] or progression.get("goal", package["initial_public_goal"])
+    return {"facts": facts, "objects": objects, "goal": goal}
 
 
 def _unique(items: list[dict[str, Any]], label: str) -> set[str]:

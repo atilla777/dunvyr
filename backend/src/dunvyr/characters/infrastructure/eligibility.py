@@ -7,12 +7,30 @@ from uuid import UUID
 from dunvyr.adventures.public import PinnedTemplatesReader
 from dunvyr.characters.domain.character import CharacterInput, validate_allocation
 from dunvyr.characters.infrastructure.repository import CharacterRepository
-from dunvyr.characters.public import EligibleCharacter
+from dunvyr.characters.public import CharacterCheckInput, EligibleCharacter
 
 
 class SqlCharacterEligibilityReader:
     def __init__(self, repository: CharacterRepository, templates: PinnedTemplatesReader) -> None:
         self.repository, self.templates = repository, templates
+
+    def check_input(
+        self, campaign_id: UUID, guest_id: UUID, character_id: UUID, skill_id: str
+    ) -> CharacterCheckInput | None:
+        eligible = self.eligible(campaign_id, guest_id)
+        if eligible is None or eligible.id != character_id:
+            return None
+        templates = self.templates.templates(campaign_id)
+        card = self.repository.get(campaign_id, guest_id)
+        if templates is None or card is None:
+            return None
+        template = next((s for s in templates.skills if s.id == skill_id), None)
+        if template is None:
+            return None
+        characteristics = cast(dict[str, int], card["characteristics"])
+        skills = cast(list[dict[str, object]], card["skills"])
+        value = next((cast(int, s["value"]) for s in skills if s["id"] == skill_id), 0)
+        return CharacterCheckInput(characteristics[template.characteristic], value)
 
     def eligible(self, campaign_id: UUID, guest_id: UUID) -> EligibleCharacter | None:
         try:

@@ -13,3 +13,15 @@ class EligibleCharacter:
 
 class CharacterEligibilityReader(Protocol):
     def eligible(self, campaign_id: UUID, guest_id: UUID) -> EligibleCharacter | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterCheckInput:
+    characteristic: int
+    skill: int
+
+
+class CharacterCheckInputReader(Protocol):
+    def check_input(
+        self, campaign_id: UUID, guest_id: UUID, character_id: UUID, skill_id: str
+    ) -> CharacterCheckInput | None: ...

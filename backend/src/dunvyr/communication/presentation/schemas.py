@@ -99,11 +99,31 @@ class QueueEventResponse(BaseModel):
     queue_state: QueueStateBody
 
 
+class CheckResultBody(BaseModel):
+    dice: tuple[int, ...]
+    characteristic: int
+    skill: int
+    modifier: int
+    difficulty: int
+    total: int
+    success: bool
+
+
+class CheckEventResponse(BaseModel):
+    type: Literal["check_resolved"]
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    result: CheckResultBody
+
+
 ChatEventResponse = Annotated[
     ChatMessageEventResponse
     | ChatMemberJoinedEventResponse
     | GameSessionEventResponse
-    | QueueEventResponse,
+    | QueueEventResponse
+    | CheckEventResponse,
     Field(discriminator="type"),
 ]
 

@@ -10,7 +10,7 @@
 - [Communication: чат кампании в реальном времени, единый поток событий, WebSocket, доставка после commit, reconnect-протокол клиента](backend/communication.md)
 - [Локальное приключение, закреплённая версия, сцена, карта и безопасный каталог испытаний](backend/adventures.md) — каталог: кандидат dunvyr-lbp.3, публикация ожидается
 - [Персонаж участника кампании](backend/characters.md) — кандидат dunvyr-kye.3, интеграция ожидается
-- [Очередь небоевого испытания](backend/gameplay.md) — кандидат dunvyr-lbp.4, интеграция ожидается
+- [Очередь и подтверждение небоевого действия](backend/gameplay.md) — кандидат dunvyr-lbp.6, интеграция ожидается
 - [Frontend-скелет: toolchain, минимальная страница, dev-сервер, проверки](frontend/skeleton.md)
 - [Командный интерфейс: Makefile, make dev, git hooks, E2E, CI, изоляция прогонов](tooling/commands.md)
 

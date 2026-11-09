@@ -7,7 +7,15 @@ import { CharacterPanel } from './CharacterPanel';
 import { SceneViewer } from './SceneViewer';
 import { LocationMap } from './LocationMap';
 import { EncounterCatalog } from './EncounterCatalog';
-import { newerQueueState, type ChatMember, type PresenceState, type QueueState } from './chat';
+import {
+  isCheckResult,
+  isQueueState,
+  newerQueueState,
+  type CheckResult,
+  type ChatMember,
+  type PresenceState,
+  type QueueState,
+} from './chat';
 import type { ChatTransportFactory } from './chatSocket';
 import type { ChatConnectionStatus } from './chatSocket';
 import { GameSessionPanel } from './GameSessionPanel';
@@ -46,10 +54,28 @@ export function CampaignScreen({
   const [connection, setConnection] = useState<ChatConnectionStatus>('connecting');
   const [presence, setPresence] = useState<PresenceState | null>(null);
   const [queue, setQueue] = useState<QueueState | null>(null);
+  const [result, setResult] = useState<CheckResult | null>(null);
+  const [progressionRevision, setProgressionRevision] = useState(0);
   const acceptQueue = useCallback(
     (next: QueueState) => setQueue((current) => newerQueueState(current, next)),
     [],
   );
+  const refreshAfterCheck = useCallback(() => {
+    setProgressionRevision((value) => value + 1);
+    const base = `/api/campaigns/${encodeURIComponent(campaign.id)}`;
+    void fetch(`${base}/queue`, { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: unknown) => {
+        if (isQueueState(data)) acceptQueue(data);
+      })
+      .catch(() => undefined);
+    void fetch(`${base}/check-result`, { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { result?: unknown }) => {
+        if (isCheckResult(data.result)) setResult(data.result);
+      })
+      .catch(() => undefined);
+  }, [campaign.id, acceptQueue]);
   const gameSession = useGameSession(campaign.id);
   const proposals = useProposals(
     campaign.id,
@@ -59,7 +85,14 @@ export function CampaignScreen({
     gameSession.state,
     gameSession.refresh,
     connection,
+    refreshAfterCheck,
+    result !== null,
   );
+  const refreshProposals = proposals.refresh;
+  const handleCheckChanged = useCallback(() => {
+    refreshAfterCheck();
+    void refreshProposals();
+  }, [refreshAfterCheck, refreshProposals]);
   const handleMemberJoined = useCallback((member: ChatMember) => {
     const nextMember = toCampaignMember(member);
     if (nextMember === null) {
@@ -114,13 +147,24 @@ export function CampaignScreen({
 
       <div className="campaign__play">
         <div>
-          <SceneViewer campaignId={campaign.id} />
+          <SceneViewer campaignId={campaign.id} revision={progressionRevision} />
           <LocationMap campaignId={campaign.id} />
           <EncounterCatalog
             campaignId={campaign.id}
             onPrepare={(selection) => proposals.execute('create', selection)}
             prepareDisabled={!proposals.ready || (proposals.state?.proposals.length ?? 0) >= 20}
+            revision={progressionRevision}
           />
+          {result && (
+            <section aria-label="Результат проверки">
+              <h3>Результат проверки: {result.success ? 'Успех' : 'Неудача'}</h3>
+              <p>Кубики: {result.dice.join(', ')}</p>
+              <p>
+                {result.characteristic} + {result.skill} + ({result.dice.join(' + ')}) +{' '}
+                {result.modifier} = {result.total} / {result.difficulty}
+              </p>
+            </section>
+          )}
           <ProposalsPanel campaignId={campaign.id} controller={proposals} />
           <QueuePanel
             campaignId={campaign.id}
@@ -131,6 +175,7 @@ export function CampaignScreen({
             session={gameSession.state}
             presence={presence}
             connection={connection}
+            completed={result !== null}
           />
         </div>
         <ChatPanel
@@ -142,6 +187,7 @@ export function CampaignScreen({
           onPresenceState={setPresence}
           onQueueState={acceptQueue}
           onProposalsChanged={proposals.refresh}
+          onCheckChanged={handleCheckChanged}
           transportFactory={transportFactory}
         />
       </div>

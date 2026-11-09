@@ -62,6 +62,7 @@ export interface Scene {
   description: string;
   illustration: string;
   objects: SceneObject[];
+  goal?: string;
 }
 
 export type SceneState = { status: 'waiting'; scene: null } | { status: 'ready'; scene: Scene };

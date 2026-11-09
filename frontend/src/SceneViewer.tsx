@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { fetchScene, sceneImageUrl, type Scene, type SceneObject } from './api';
+import { fetchScene, sceneImageUrl, type Scene } from './api';
 
 function SceneContents({ campaignId, scene }: { campaignId: string; scene: Scene }) {
-  const [selected, setSelected] = useState<SceneObject | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = scene.objects.find((object) => object.id === selectedId);
   const [zoom, setZoom] = useState(1);
   const [imageError, setImageError] = useState(false);
   const [imageKey, setImageKey] = useState(0);
@@ -11,6 +12,7 @@ function SceneContents({ campaignId, scene }: { campaignId: string; scene: Scene
     <>
       <h3>{scene.name}</h3>
       <p>{scene.description}</p>
+      {scene.goal && <p>Цель: {scene.goal}</p>}
       <div className="scene__controls">
         <button type="button" onClick={() => setZoom((v) => Math.min(v + 0.5, 3))}>
           Увеличить
@@ -60,7 +62,7 @@ function SceneContents({ campaignId, scene }: { campaignId: string; scene: Scene
                   width: `${obj.hotspot.width * 100}%`,
                   height: `${obj.hotspot.height * 100}%`,
                 }}
-                onClick={() => setSelected(obj)}
+                onClick={() => setSelectedId(obj.id)}
               />
             ))}
           </div>
@@ -70,7 +72,7 @@ function SceneContents({ campaignId, scene }: { campaignId: string; scene: Scene
       <ul>
         {scene.objects.map((obj) => (
           <li key={obj.id}>
-            <button type="button" onClick={() => setSelected(obj)}>
+            <button type="button" onClick={() => setSelectedId(obj.id)}>
               {obj.name}
             </button>
           </li>
@@ -86,7 +88,13 @@ function SceneContents({ campaignId, scene }: { campaignId: string; scene: Scene
   );
 }
 
-export function SceneViewer({ campaignId }: { campaignId: string }) {
+export function SceneViewer({
+  campaignId,
+  revision = 0,
+}: {
+  campaignId: string;
+  revision?: number;
+}) {
   const [scene, setScene] = useState<Scene | null>(null);
   const [status, setStatus] = useState<'loading' | 'waiting' | 'ready' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
@@ -113,7 +121,7 @@ export function SceneViewer({ campaignId }: { campaignId: string }) {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [campaignId, retry]);
+  }, [campaignId, retry, revision]);
 
   useEffect(() => {
     if (open) dialog.current?.showModal();
@@ -151,6 +159,7 @@ export function SceneViewer({ campaignId }: { campaignId: string }) {
           <div className="scene__mobile">
             <h3>{scene.name}</h3>
             <p>{scene.description}</p>
+            {scene.goal && <p>Цель: {scene.goal}</p>}
             <button ref={opener} type="button" onClick={() => setOpen(true)}>
               Открыть сцену
             </button>

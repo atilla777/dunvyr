@@ -19,6 +19,7 @@ interface Props {
   session: GameSessionState | null;
   presence: PresenceState | null;
   connection: ChatConnectionStatus;
+  completed?: boolean;
 }
 
 export function QueuePanel({
@@ -30,6 +31,7 @@ export function QueuePanel({
   session,
   presence,
   connection,
+  completed = false,
 }: Props) {
   const [character, setCharacter] = useState<Character | null>(null);
   const [catalog, setCatalog] = useState<EncounterCatalogState | null>(null);
@@ -158,9 +160,11 @@ export function QueuePanel({
           </p>
           <p>Раунд: {queue.round_number}</p>
           <p>
-            {queue.current_guest_id === null
-              ? 'Ожидаем игроков в сети.'
-              : `Сейчас: ${name(queue.current_guest_id)}`}
+            {completed
+              ? 'Испытание завершено.'
+              : queue.current_guest_id === null
+                ? 'Ожидаем игроков в сети.'
+                : `Сейчас: ${name(queue.current_guest_id)}`}
           </p>
           <ol>
             {queue.round_order.map((id, index) => (
@@ -173,6 +177,7 @@ export function QueuePanel({
                     : ''}
                 {id === queue.current_guest_id ? ' — текущий' : ''}
                 {ready &&
+                  !completed &&
                   queue.current_guest_id === currentGuestId &&
                   index > queue.cursor &&
                   presence?.online_guest_ids.includes(id) && (
@@ -199,7 +204,6 @@ export function QueuePanel({
           </p>
         </>
       )}
-      <p>Выполнение действий пока недоступно.</p>
       {error && <p role="alert">{error}</p>}
       {pending && (
         <button

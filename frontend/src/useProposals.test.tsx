@@ -10,7 +10,10 @@ const session: GameSessionState = {
 const queue: QueueState = { version: 2, queue: null };
 const selection = { encounter_id: 'e', object_id: 'o', solution_id: 's' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  sessionStorage.clear();
+});
 
 it('never resurrects an item from an older receipt', () => {
   const newer: ProposalState = { version: 2, proposals: [] };
@@ -156,4 +159,66 @@ it('disables changes when paused and editing outside the turn', async () => {
   expect(result.current.ownTurn).toBe(false);
   rerender({ current: { ...session, session: { ...session.session!, status: 'paused' } } });
   expect(result.current.ready).toBe(false);
+});
+
+it('retains the confirmation key and versions after a lost response and rate limit', async () => {
+  const requests: RequestInit[] = [];
+  const proposal = {
+    id: 'p',
+    character_id: 'c',
+    availability: 'available' as const,
+    selection: { ...selection, encounter_name: 'E', solution_name: 'S' },
+  };
+  const active: QueueState = {
+    version: 2,
+    queue: {
+      encounter_id: 'e',
+      participants: [{ guest_id: 'guest', character_id: 'c' }],
+      round_order: ['guest'],
+      round_number: 1,
+      cursor: 0,
+      skipped: [],
+      current_guest_id: 'guest',
+    },
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/character')) return json({ id: 'c' });
+      if (init?.method !== 'POST') return json({ version: 1, proposals: [proposal] });
+      requests.push(init);
+      if (requests.length === 1) throw new Error('lost');
+      if (requests.length === 2) return new Response(null, { status: 429 });
+      return json({
+        result: {
+          dice: [0, 0, 0, 0],
+          characteristic: 4,
+          skill: 1,
+          modifier: 0,
+          difficulty: 5,
+          total: 5,
+          success: true,
+        },
+        replayed: true,
+      });
+    }),
+  );
+  const confirmed = vi.fn();
+  const { result } = renderHook(() =>
+    useProposals('campaign', 'guest', active, vi.fn(), session, vi.fn(), 'open', confirmed),
+  );
+  await waitFor(() => expect(result.current.canConfirm(proposal)).toBe(true));
+  act(() => result.current.execute('confirm', undefined, 'p'));
+  await waitFor(() => expect(result.current.pending).not.toBeNull());
+  act(() => result.current.retry());
+  await waitFor(() => expect(requests).toHaveLength(2));
+  await waitFor(() => expect(result.current.busy).toBe(false));
+  act(() => result.current.retry());
+  await waitFor(() => expect(confirmed).toHaveBeenCalledOnce());
+  expect(requests).toHaveLength(3);
+  for (const request of requests) {
+    expect(request.headers).toEqual(requests[0].headers);
+    expect(request.body).toEqual(requests[0].body);
+  }
+  expect(sessionStorage.length).toBe(0);
 });

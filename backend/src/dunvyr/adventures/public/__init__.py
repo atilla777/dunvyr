@@ -79,3 +79,9 @@ class AvailableEncounterCatalog:
 
 class AvailableEncounterCatalogReader(Protocol):
     def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None: ...
+
+
+class AdventureCheckParticipant(Protocol):
+    def apply_check(
+        self, campaign_id: UUID, encounter_id: str, object_id: str, solution_id: str, success: bool
+    ) -> None: ...

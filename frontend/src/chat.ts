@@ -64,12 +64,44 @@ export interface QueueChangedEvent extends ChatEventBase {
   queue_state: QueueState;
 }
 
+export interface CheckResult {
+  dice: number[];
+  characteristic: number;
+  skill: number;
+  modifier: number;
+  difficulty: number;
+  total: number;
+  success: boolean;
+}
+
+export function isCheckResult(value: unknown): value is CheckResult {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.dice) &&
+    value.dice.length === 4 &&
+    value.dice.every((die: unknown) => die === -1 || die === 0 || die === 1) &&
+    ['characteristic', 'skill', 'modifier', 'difficulty', 'total'].every((key) =>
+      Number.isSafeInteger(value[key]),
+    ) &&
+    typeof value.success === 'boolean'
+  );
+}
+
+export interface CheckResolvedEvent extends ChatEventBase {
+  type: 'check_resolved';
+  result: CheckResult;
+}
+
 export function newerQueueState(current: QueueState | null, incoming: QueueState): QueueState {
   return current === null || incoming.version > current.version ? incoming : current;
 }
 
 export type ChatEvent =
-  ChatMessageEvent | ChatMemberJoinedEvent | GameSessionChangedEvent | QueueChangedEvent;
+  | ChatMessageEvent
+  | ChatMemberJoinedEvent
+  | GameSessionChangedEvent
+  | QueueChangedEvent
+  | CheckResolvedEvent;
 
 export interface ChatHistory {
   campaign_id: string;
@@ -149,7 +181,8 @@ export function isChatEvent(value: unknown): value is ChatEvent {
     value.type !== 'message' &&
     value.type !== 'member_joined' &&
     value.type !== 'game_session_changed' &&
-    value.type !== 'queue_changed'
+    value.type !== 'queue_changed' &&
+    value.type !== 'check_resolved'
   ) {
     return false;
   }
@@ -158,7 +191,8 @@ export function isChatEvent(value: unknown): value is ChatEvent {
     typeof value.campaign_id === 'string' &&
     typeof value.sequence === 'number' &&
     (value.type !== 'game_session_changed' || isGameSessionState(value.game_session_state)) &&
-    (value.type !== 'queue_changed' || isQueueState(value.queue_state))
+    (value.type !== 'queue_changed' || isQueueState(value.queue_state)) &&
+    (value.type !== 'check_resolved' || isCheckResult(value.result))
   );
 }
 

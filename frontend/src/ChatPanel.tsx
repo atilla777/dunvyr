@@ -30,6 +30,7 @@ interface ChatPanelProps {
   onPresenceState?: (state: PresenceState) => void;
   onQueueState?: (state: QueueState) => void;
   onProposalsChanged?: () => void;
+  onCheckChanged?: () => void;
   transportFactory?: ChatTransportFactory;
 }
 
@@ -70,6 +71,7 @@ export function ChatPanel({
   onPresenceState,
   onQueueState,
   onProposalsChanged,
+  onCheckChanged,
   transportFactory,
 }: ChatPanelProps) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -87,6 +89,7 @@ export function ChatPanel({
   const onPresenceStateRef = useRef(onPresenceState);
   const onQueueStateRef = useRef(onQueueState);
   const onProposalsChangedRef = useRef(onProposalsChanged);
+  const onCheckChangedRef = useRef(onCheckChanged);
   const presenceRef = useRef<PresenceState | null>(null);
   useEffect(() => {
     onMemberJoinedRef.current = onMemberJoined;
@@ -97,7 +100,15 @@ export function ChatPanel({
     onPresenceStateRef.current = onPresenceState;
     onQueueStateRef.current = onQueueState;
     onProposalsChangedRef.current = onProposalsChanged;
-  }, [onSessionState, onConnection, onPresenceState, onQueueState, onProposalsChanged]);
+    onCheckChangedRef.current = onCheckChanged;
+  }, [
+    onSessionState,
+    onConnection,
+    onPresenceState,
+    onQueueState,
+    onProposalsChanged,
+    onCheckChanged,
+  ]);
 
   /**
    * Merge server events exactly once per `event_id`. The same event can arrive
@@ -139,6 +150,7 @@ export function ChatPanel({
           if (event.type === 'game_session_changed')
             onSessionStateRef.current?.(event.game_session_state);
           if (event.type === 'queue_changed') onQueueStateRef.current?.(event.queue_state);
+          if (event.type === 'check_resolved') onCheckChangedRef.current?.();
           acceptEvents([event], true);
         }
       },
@@ -190,7 +202,8 @@ export function ChatPanel({
             lastSequence.current = Math.max(lastSequence.current, event.sequence);
           }
           hasSnapshot.current = true;
-          onProposalsChangedRef.current?.();
+          if (onCheckChangedRef.current) onCheckChangedRef.current();
+          else onProposalsChangedRef.current?.();
           acceptEvents(history.events, true);
           setHistoryStatus('ready');
         } catch (error) {
@@ -267,6 +280,13 @@ export function ChatPanel({
           ) : event.type === 'member_joined' ? (
             <li key={event.event_id} className="chat__system">
               {event.member.nickname} присоединился к кампании
+            </li>
+          ) : event.type === 'check_resolved' ? (
+            <li key={event.event_id} className="chat__system">
+              Проверка: {event.result.success ? 'Успех' : 'Неудача'}. Кубики:{' '}
+              {event.result.dice.join(', ')}. {event.result.characteristic} + {event.result.skill} +
+              ({event.result.dice.join(' + ')}) + {event.result.modifier} = {event.result.total} /{' '}
+              {event.result.difficulty}
             </li>
           ) : null,
         )}

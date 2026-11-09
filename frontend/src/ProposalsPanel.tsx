@@ -48,6 +48,15 @@ export function ProposalsPanel({
                 <p>Предложение недоступно.</p>
               )}
               <p>Сохранено; перед выполнением потребуется повторная проверка.</p>
+              {proposal.availability === 'available' && proposal.selection && (
+                <button
+                  type="button"
+                  disabled={!controller.canConfirm(proposal)}
+                  onClick={() => controller.execute('confirm', undefined, proposal.id)}
+                >
+                  Подтвердить и бросить
+                </button>
+              )}
               {proposal.availability === 'available' &&
                 proposal.selection &&
                 catalog?.status === 'ready' &&

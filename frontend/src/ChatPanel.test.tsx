@@ -113,6 +113,56 @@ afterEach(() => {
 });
 
 describe('ChatPanel', () => {
+  it('renders resolved checks in sequence once across live delivery and reconnect', async () => {
+    const before = messageEvent('before', 1, OTHER_GUEST_ID, 'Боб', 'До броска');
+    const after = messageEvent('after', 3, OTHER_GUEST_ID, 'Боб', 'После броска');
+    const check: ChatEvent = {
+      type: 'check_resolved',
+      event_id: 'roll',
+      campaign_id: CAMPAIGN_ID,
+      sequence: 2,
+      occurred_at: '2026-01-01T12:00:01+00:00',
+      result: {
+        dice: [-1, 0, 1, 1],
+        characteristic: 3,
+        skill: 1,
+        modifier: 0,
+        difficulty: 5,
+        total: 5,
+        success: true,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(history([before])))
+        .mockResolvedValueOnce(jsonResponse(history([check, after]))),
+    );
+    const { factory, transports } = fakeFactory();
+    render(
+      <ChatPanel
+        campaignId={CAMPAIGN_ID}
+        currentGuestId={CURRENT_GUEST_ID}
+        transportFactory={factory}
+      />,
+    );
+    await screen.findByText('До броска');
+    act(() => {
+      transports[0].handlers.onEvent(after);
+      transports[0].handlers.onEvent(check);
+    });
+    await act(async () => {
+      await transports[0].handlers.onResync?.(new AbortController().signal);
+    });
+    const items = screen.getAllByRole('listitem').map((item) => item.textContent ?? '');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain('До броска');
+    expect(items[1]).toContain('Успех');
+    expect(items[1]).toContain('-1, 0, 1, 1');
+    expect(items[1]).toContain('5');
+    expect(items[2]).toContain('После броска');
+  });
   it('accepts only higher same-epoch live presence and replaces epoch on resync', async () => {
     const a = { epoch: 'a', revision: 4, online_guest_ids: [CURRENT_GUEST_ID] };
     const b = { epoch: 'b', revision: 0, online_guest_ids: [] };

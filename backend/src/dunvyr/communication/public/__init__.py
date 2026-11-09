@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -12,4 +13,8 @@ class ProposalNotifier(Protocol):
     def notify(self, campaign_id: UUID, actor_id: UUID) -> None: ...
 
 
-__all__ = ["ProposalNotifier"]
+class CheckEventStager(Protocol):
+    def stage(self, campaign_id: UUID, result: dict[str, object], now: datetime) -> UUID: ...
+
+
+__all__ = ["CheckEventStager", "ProposalNotifier"]

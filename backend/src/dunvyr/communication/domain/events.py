@@ -181,7 +181,30 @@ class QueueChangedEvent:
             raise InvalidEvent("Invalid queue version")
 
 
-ChatEvent = MessageEvent | MemberJoinedEvent | GameSessionChangedEvent | QueueChangedEvent
+@dataclass(frozen=True, slots=True)
+class CheckResolvedEvent:
+    event_id: UUID
+    campaign_id: UUID
+    sequence: int
+    occurred_at: datetime
+    result_json: str
+
+    def __post_init__(self) -> None:
+        _validate_envelope(
+            event_id=self.event_id,
+            campaign_id=self.campaign_id,
+            sequence=self.sequence,
+            occurred_at=self.occurred_at,
+        )
+
+
+ChatEvent = (
+    MessageEvent
+    | MemberJoinedEvent
+    | GameSessionChangedEvent
+    | QueueChangedEvent
+    | CheckResolvedEvent
+)
 
 
 __all__ = [

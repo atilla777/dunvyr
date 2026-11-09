@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -43,6 +44,7 @@ from dunvyr.communication.application.service import ChatService
 from dunvyr.communication.infrastructure.campaign_events import (
     build_campaign_member_joined_publisher,
 )
+from dunvyr.communication.infrastructure.checks import CheckEventStager
 from dunvyr.communication.infrastructure.factory import build_chat_service
 from dunvyr.communication.infrastructure.game_sessions import (
     GameSessionEventStager,
@@ -52,8 +54,10 @@ from dunvyr.communication.infrastructure.proposals import ProposalNotifier
 from dunvyr.communication.infrastructure.queues import QueueEventStager
 from dunvyr.communication.infrastructure.realtime import RealtimeHub
 from dunvyr.communication.presentation.router import router as communication_router
+from dunvyr.gameplay.application.confirmation import ConfirmationService
 from dunvyr.gameplay.application.proposals import ProposalService
 from dunvyr.gameplay.application.service import QueueService
+from dunvyr.gameplay.infrastructure.checks import SqlCheckRepository
 from dunvyr.gameplay.infrastructure.proposals import SqlProposalUnitOfWork
 from dunvyr.gameplay.infrastructure.repository import SqlQueueUnitOfWork
 from dunvyr.gameplay.presentation.proposals import router as proposals_router
@@ -172,7 +176,11 @@ def create_app(
     ) -> Response:
         response = await call_next(request)
         parts = request.url.path.split("/")
-        if len(parts) >= 5 and parts[1:3] == ["api", "campaigns"] and parts[4] == "proposals":
+        if (
+            len(parts) >= 5
+            and parts[1:3] == ["api", "campaigns"]
+            and parts[4] in {"proposals", "check-result"}
+        ):
             response.headers["Cache-Control"] = "private, no-store"
         return response
 
@@ -242,6 +250,20 @@ def create_app(
         SqlSnapshotReader(session),
         app.state.presence,
         ProposalNotifier(realtime_hub),
+    )
+    app.state.confirmation_service_factory = lambda session: ConfirmationService(
+        SqlProposalUnitOfWork(session),
+        SqlQueueUnitOfWork(session),
+        SqlCheckRepository(session),
+        SqlGameSessionUnitOfWork(session),
+        SqlCharacterEligibilityReader(CharacterRepository(session), SqlSnapshotReader(session)),
+        SqlSnapshotReader(session),
+        SqlSnapshotReader(session),
+        app.state.presence,
+        CheckEventStager(session),
+        GameSessionNotifier(app.state.session_factory, realtime_hub),
+        utc_now,
+        lambda: tuple(secrets.randbelow(3) - 1 for _ in range(4)),
     )
     app.state.queue_service_factory = lambda session: QueueService(
         SqlQueueUnitOfWork(session),

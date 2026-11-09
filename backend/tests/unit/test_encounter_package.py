@@ -214,6 +214,7 @@ def test_pinned_reader_v3_catalog_and_templates_are_immutable(v3):
                 "(campaign_id TEXT, content TEXT, fingerprint TEXT)"
             )
         )
+        conn.execute(text("CREATE TABLE adventures_progression (campaign_id TEXT, content TEXT)"))
     campaign_id = uuid4()
     with Session(engine) as session:
         reader = SqlSnapshotReader(session)

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from sqlalchemy.orm import Session
 
+from dunvyr.gameplay.application.confirmation import ConfirmationService
 from dunvyr.gameplay.application.proposals import ProposalCommand, ProposalService, ProposalState
 from dunvyr.gameplay.application.service import QueueError
 from dunvyr.gameplay.presentation.router import Guest, Key
@@ -173,3 +174,54 @@ def cancel(
         ),
         response,
     )
+
+
+def confirmation_service(
+    request: Request, session: Annotated[Session, Depends(get_session)]
+) -> ConfirmationService:
+    result: ConfirmationService = request.app.state.confirmation_service_factory(session)
+    return result
+
+
+Confirmation = Annotated[ConfirmationService, Depends(confirmation_service)]
+
+
+@router.post("/{campaign_id}/proposals/{proposal_id}/confirm", dependencies=[Depends(mutation)])
+def confirm(
+    campaign_id: UUID,
+    proposal_id: UUID,
+    payload: Versions,
+    actor: Guest,
+    use_case: Confirmation,
+    key: Key,
+    response: Response,
+) -> dict[str, object]:
+    try:
+        result, replayed = use_case.execute(
+            ProposalCommand(
+                campaign_id,
+                actor.id,
+                key,
+                payload.expected_version,
+                payload.expected_queue_version,
+                payload.expected_lifecycle_revision,
+                "confirm",
+                proposal_id,
+            )
+        )
+    except QueueError as error:
+        raise HTTPException(error.status, error.detail) from error
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"result": result, "replayed": replayed}
+
+
+@router.get("/{campaign_id}/check-result")
+def latest_check(
+    campaign_id: UUID, actor: Guest, use_case: Confirmation, response: Response
+) -> dict[str, object]:
+    try:
+        result = use_case.latest(campaign_id, actor.id)
+    except QueueError as error:
+        raise HTTPException(error.status, error.detail) from error
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"result": result}

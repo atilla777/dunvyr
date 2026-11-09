@@ -1,13 +1,14 @@
 """Persistence for adventure-owned snapshots."""
 
 import json
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from dunvyr.adventures.domain.package import (
+    apply_check_outcome,
     project_initial_encounters,
     project_initial_map,
     project_initial_scene,
@@ -33,6 +34,34 @@ class SqlSnapshotReader:
     def release_read(self) -> None:
         self._session.rollback()
 
+    def _progression(self, campaign_id: UUID) -> dict[str, Any]:
+        value = self._session.execute(
+            text("SELECT content FROM adventures_progression WHERE campaign_id=:id"),
+            {"id": str(campaign_id)},
+        ).scalar_one_or_none()
+        return json.loads(value) if value is not None else {}
+
+    def apply_check(
+        self, campaign_id: UUID, encounter_id: str, object_id: str, solution_id: str, success: bool
+    ) -> None:
+        content = self._session.execute(
+            text("SELECT content FROM adventures_snapshots WHERE campaign_id=:id"),
+            {"id": str(campaign_id)},
+        ).scalar_one_or_none()
+        if content is None:
+            raise ValueError("selection unavailable")
+        package = parse_package(json.loads(content)).model_dump()
+        progression = apply_check_outcome(
+            package, self._progression(campaign_id), encounter_id, object_id, solution_id, success
+        )
+        self._session.execute(
+            text(
+                "INSERT INTO adventures_progression (campaign_id, content) VALUES (:id, :content) "
+                "ON CONFLICT(campaign_id) DO UPDATE SET content=:content"
+            ),
+            {"id": str(campaign_id), "content": json.dumps(progression, ensure_ascii=False)},
+        )
+
     def available_encounters(self, campaign_id: UUID) -> AvailableEncounterCatalog | None:
         row = self._session.execute(
             text("SELECT content, fingerprint FROM adventures_snapshots WHERE campaign_id = :id"),
@@ -42,7 +71,9 @@ class SqlSnapshotReader:
             return None
         try:
             package = parse_package(json.loads(row.content)).model_dump()
-            projection = project_initial_encounters(package, row.fingerprint)
+            projection = project_initial_encounters(
+                package, row.fingerprint, self._progression(campaign_id)
+            )
             return AvailableEncounterCatalog(
                 fingerprint=projection["fingerprint"],
                 current_location_id=projection["current_location_id"],
@@ -77,7 +108,15 @@ class SqlSnapshotReader:
             return None
         try:
             package = parse_package(json.loads(content)).model_dump()
-            return project_initial_scene(package)
+            scene = project_initial_scene(package)
+            progression = self._progression(campaign_id)
+            if progression.get("goal"):
+                scene["goal"] = progression["goal"]
+            for obj in scene["objects"]:
+                obj["description"] = progression.get("objects", {}).get(
+                    obj["id"], obj["description"]
+                )
+            return scene
         except (ValueError, KeyError, TypeError, RecursionError) as error:
             raise ValueError("invalid snapshot") from error
 
